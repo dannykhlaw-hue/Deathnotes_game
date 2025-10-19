@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deathnotes - Elite Inhibition Test (Go/No-Go)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Font and Base Styles */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; /* Dark background */
+            display: flex;
+            flex-direction: column; 
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            user-select: none;
+            overflow: hidden;
+            /* CRITICAL: Allows taps to work instantly without delay */
+            touch-action: manipulation; 
+        }
+
+        /* Central Stimulus Box */
+        #stimulus-box {
+            width: 90vw;
+            height: 50vh;
+            max-width: 600px;
+            max-height: 400px;
+            border-radius: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-weight: 900;
+            /* Allow the text size to dynamically change for final messages */
+            font-size: clamp(2rem, 10vw, 4rem); 
+            color: white;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            transition: background-color 0.2s ease-out, transform 0.1s ease;
+            position: relative;
+            cursor: pointer;
+            text-align: center;
+        }
+        
+        /* Message Area for Feedback */
+        #feedback-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: clamp(1.5rem, 8vw, 3rem);
+            font-weight: 900;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s ease-in-out;
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
+        }
+
+        /* Button */
+        #go-btn {
+            font-size: 1.5rem;
+            font-weight: 700;
+            padding: 1rem 2rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            transition: transform 0.1s;
+        }
+
+        #go-btn:active {
+            transform: scale(0.98);
+            box-shadow: none;
+        }
+        
+        /* Scoreboard Styling */
+        .scoreboard-item {
+            text-align: center;
+            padding: 0.75rem 0.5rem;
+            border-radius: 0.5rem;
+            background-color: #1f2937;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+            flex-grow: 1;
+        }
+
+    </style>
+</head>
+<body class="p-4">
+
+    <!-- Header and Scoreboard -->
+    <div class="w-full max-w-2xl mb-8 flex justify-between items-start gap-2">
+        <div class="scoreboard-item">
+            <p class="text-xs text-green-400 uppercase tracking-wider">HITS Goal: 25</p>
+            <p id="hits-count" class="text-2xl text-green-400 font-mono">0</p>
+        </div>
+        <div class="scoreboard-item">
+            <p class="text-xs text-red-400 uppercase tracking-wider">FALSE ALARMS</p>
+            <p id="false-alarms-count" class="text-2xl text-red-400 font-mono">0</p>
+        </div>
+        <div class="scoreboard-item">
+            <p class="text-xs text-blue-400 uppercase tracking-wider">AVG RT Goal: 370ms</p>
+            <p id="avg-rt-display" class="text-2xl text-blue-400 font-mono">N/A</p>
+        </div>
+    </div>
+
+    <!-- Main Stimulus Area -->
+    <div id="stimulus-box" class="bg-gray-700">
+        <p id="stimulus-text">Press Start</p>
+        <p id="feedback-message"></p>
+    </div>
+
+    <!-- Controls -->
+    <div class="mt-8 w-full max-w-2xl flex flex-col items-center space-y-4">
+        <button id="go-btn" class="bg-indigo-600 text-white hover:bg-indigo-700 w-full max-w-sm">
+            Start Elite Test
+        </button>
+        <p id="instructions" class="text-sm text-gray-400">
+            GO (Green) = Click RESPOND. | STOP (Red) = Do Nothing.
+            <br>A False Alarm (tapping STOP) will end the test immediately. 
+        </p>
+    </div>
+
+<script>
+    // --- GAME CONSTANTS ---
+    const NOGO_BASE_RATIO = 0.35; // Base chance of No-Go
+    const NOGO_DAMPENING_RATIO = 0.20; // Ratio used if last trial was No-Go (80% GO chance)
+    const NOGO_STREAK_BREAK_RATIO = 0.45; // Ratio used if last trial was Go (45% STOP chance) - Higher chance to break GO streaks
+    const MIN_INTERVAL = 1000; // Minimum time between stimulus changes
+    const MAX_INTERVAL = 2000; // Maximum time between stimulus changes
+    
+    // --- ELITE GOALS ---
+    const HIT_GOAL = 25; 
+    const RT_GOAL = 370; // ms (Updated from 350ms)
+
+    // --- DOM ELEMENTS ---
+    const stimulusBox = document.getElementById('stimulus-box');
+    const stimulusText = document.getElementById('stimulus-text');
+    const goButton = document.getElementById('go-btn');
+    const hitsCountDisplay = document.getElementById('hits-count');
+    const falseAlarmsCountDisplay = document.getElementById('false-alarms-count');
+    const avgRTDisplay = document.getElementById('avg-rt-display');
+    const feedbackMessage = document.getElementById('feedback-message');
+
+    // --- GAME STATE ---
+    let trialNumber = 0; 
+    let hits = 0; 
+    let misses = 0; 
+    let falseAlarms = 0; 
+    let correctRejections = 0; 
+    let reactionTimes = [];
+    let isGameRunning = false;
+    let isStimulusActive = false;
+    let isNoGoTrial = false;
+    let startTime = 0;
+    let timeoutId = null;
+    let lastTrialWasNoGo = false; 
+
+    // --- HELPER FUNCTIONS ---
+
+    function calculateAverageRT() {
+        if (reactionTimes.length === 0) return 0;
+        const sum = reactionTimes.reduce((a, b) => a + b, 0);
+        return Math.round(sum / reactionTimes.length);
+    }
+
+    function updateScoreboard() {
+        hitsCountDisplay.textContent = hits;
+        falseAlarmsCountDisplay.textContent = falseAlarms;
+        
+        const avg = calculateAverageRT();
+        if (avg > 0) {
+            avgRTDisplay.textContent = `${avg}ms`;
+            // Color feedback based on the 370ms goal
+            if (avg <= RT_GOAL) {
+                avgRTDisplay.classList.remove('text-red-400');
+                avgRTDisplay.classList.add('text-blue-400');
+            } else {
+                avgRTDisplay.classList.remove('text-blue-400');
+                avgRTDisplay.classList.add('text-red-400');
+            }
+        } else {
+            avgRTDisplay.textContent = 'N/A';
+        }
+
+        // Check for immediate end condition (reaching the hit goal)
+        if (hits >= HIT_GOAL) {
+            // End the game, let endGame determine if it was a win or loss based on RT
+            endGame(false); 
+        }
+    }
+    
+    function showFeedback(text, color) {
+        feedbackMessage.textContent = text;
+        feedbackMessage.style.color = color;
+        feedbackMessage.style.opacity = 1;
+        setTimeout(() => {
+            feedbackMessage.style.opacity = 0;
+        }, 500); // Display feedback for 500ms
+    }
+
+    // --- GAME LOGIC ---
+    
+    function startGame() {
+        // Reset state
+        trialNumber = 0;
+        hits = 0;
+        misses = 0;
+        falseAlarms = 0;
+        correctRejections = 0;
+        reactionTimes = [];
+        isGameRunning = true;
+        isStimulusActive = false;
+        lastTrialWasNoGo = false;
+        
+        // Remove glow/fail classes
+        stimulusBox.classList.remove('shadow-green-500/50', 'shadow-red-500/50', 'shadow-yellow-500/50');
+        
+        // Initial UI setup
+        goButton.textContent = 'TAP TO RESPOND';
+        stimulusBox.style.backgroundColor = '#4b5563'; // Gray/Ready
+        stimulusText.textContent = 'Get Ready...';
+        updateScoreboard();
+
+        // Start the first trial interval
+        scheduleNextTrial();
+    }
+
+    function scheduleNextTrial() {
+        // The game now only ends on HIT_GOAL being met or a False Alarm.
+        if (!isGameRunning) {
+            return;
+        }
+
+        // Clear any lingering stimulus state before the next trial
+        isStimulusActive = false;
+        isNoGoTrial = false;
+        stimulusBox.style.backgroundColor = '#4b5563'; // Gray/Ready
+        stimulusText.textContent = 'Get Ready...';
+        
+        // Generate a random interval before the stimulus appears
+        const interval = Math.random() * (MAX_INTERVAL - MIN_INTERVAL) + MIN_INTERVAL;
+        
+        timeoutId = setTimeout(showStimulus, interval);
+    }
+
+    function showStimulus() {
+        trialNumber++;
+        isStimulusActive = true;
+        
+        // --- Stimulus Mixing Logic (Reworked for better alternation) ---
+        let currentNoGoRatio;
+
+        if (lastTrialWasNoGo) {
+            // If last was STOP, force a high chance of GO (80%) to alternate
+            currentNoGoRatio = NOGO_DAMPENING_RATIO; 
+        } else {
+            // If last was GO, boost the chance of STOP (45%) to break GO streaks
+            currentNoGoRatio = NOGO_STREAK_BREAK_RATIO;
+        }
+
+        // Determine if it's a Go or No-Go trial
+        isNoGoTrial = Math.random() < currentNoGoRatio;
+
+        // Update tracking variable for the next trial
+        lastTrialWasNoGo = isNoGoTrial; 
+        
+        if (isNoGoTrial) {
+            // No-Go Trial (Inhibition required)
+            stimulusBox.style.backgroundColor = '#ef4444'; // Red
+            stimulusText.textContent = 'STOP!';
+        } else {
+            // Go Trial (Response required)
+            stimulusBox.style.backgroundColor = '#10b981'; // Green
+            stimulusText.textContent = 'GO!';
+            startTime = performance.now();
+        }
+        
+        updateScoreboard();
+
+        // Set a maximum response time for this stimulus (e.g., 1000ms)
+        timeoutId = setTimeout(processTrialEnd, 1000);
+    }
+    
+    function processTrialEnd() {
+        clearTimeout(timeoutId);
+        
+        if (isGameRunning && isStimulusActive) {
+            if (!isNoGoTrial) {
+                // Was a Go trial, but user missed the deadline
+                misses++;
+                showFeedback('MISS', '#f59e0b'); // Yellow for Miss
+            } else {
+                // Was a No-Go trial, and user correctly inhibited
+                correctRejections++;
+                // No specific visual feedback for correct rejection
+            }
+        }
+        
+        isStimulusActive = false;
+        scheduleNextTrial();
+    }
+
+    function handleResponse() {
+        // This check is required for the Spacebar listener
+        if (!isGameRunning) return; 
+
+        if (!isStimulusActive) {
+            // Early/pre-stimulus response
+            showFeedback('TOO EARLY', '#3b82f6');
+            return;
+        }
+        
+        clearTimeout(timeoutId);
+        isStimulusActive = false; // Response received, trial ends immediately
+
+        if (isNoGoTrial) {
+            // ERROR: Responded to a No-Go signal (False Alarm)
+            falseAlarms++;
+            showFeedback('FALSE ALARM! TEST ENDED.', '#ef4444');
+            updateScoreboard();
+            endGame(false, true); // Immediate end on False Alarm
+            return;
+        } else {
+            // SUCCESS: Responded to a Go signal (Hit)
+            const reactionTime = Math.round(performance.now() - startTime);
+            reactionTimes.push(reactionTime);
+            hits++;
+            showFeedback(`${reactionTime} ms`, '#10b981');
+        }
+        
+        updateScoreboard();
+        
+        // If the game wasn't ended by updateScoreboard (i.e., HIT_GOAL met), continue
+        if (isGameRunning) {
+            scheduleNextTrial();
+        }
+    }
+    
+    function endGame(isWinPlaceholder, isFalseAlarmEnd = false) { 
+        if (!isGameRunning && !isFalseAlarmEnd) return; // Prevent double ending
+
+        isGameRunning = false;
+        clearTimeout(timeoutId); // Stop any pending stimulus timeouts
+
+        // Calculate final results
+        const totalNoGoTrials = falseAlarms + correctRejections;
+        const avgRT = calculateAverageRT();
+        const noGoInhibition = totalNoGoTrials > 0 ? (correctRejections / totalNoGoTrials) * 100 : 0;
+        
+        const isWin = (hits >= HIT_GOAL) && (avgRT <= RT_GOAL) && (falseAlarms === 0);
+
+        let finalTitle = '';
+        let finalMessage = '';
+        let finalColor = '#ef4444'; // Default to red (Failure)
+
+        // Reset Box Shadow
+        stimulusBox.classList.remove('shadow-green-500/50', 'shadow-red-500/50', 'shadow-yellow-500/50');
+
+
+        if (isFalseAlarmEnd) {
+            // CASE 1: Failed due to inhibition error (False Alarm)
+            finalTitle = `CRITICAL FAILURE! 🚨`;
+            finalMessage = `FAILED: ${falseAlarms} False Alarm${falseAlarms > 1 ? 's' : ''}`;
+            finalColor = '#ef4444';
+            stimulusBox.classList.add('shadow-red-500/50');
+        } else if (hits >= HIT_GOAL) {
+            if (isWin) {
+                // CASE 2: Successful Win - ELITE INHIBITOR
+                finalTitle = `ELITE INHIBITOR ACHIEVED! 🏆`;
+                finalMessage = `PERFECT! RT: ${avgRT}ms`;
+                finalColor = '#10b981'; // Green (Success)
+                stimulusBox.classList.add('shadow-green-500/50');
+            } else {
+                // CASE 3: Failed Speed Check (Met hit goal, but speed failed)
+                finalTitle = `SPEED FAILURE 🐌`;
+                // REMOVED LaTeX formatting
+                finalMessage = `Too Slow! Avg RT: ${avgRT}ms (Goal: ${RT_GOAL}ms )`; 
+                finalColor = '#f59e0b'; // Amber/Orange (Speed Failure)
+                stimulusBox.classList.add('shadow-yellow-500/50');
+            }
+        } else {
+             // Safety fallback
+            finalTitle = `TEST INCOMPLETE`;
+            finalMessage = `Hits: ${hits}/${HIT_GOAL}`;
+            finalColor = '#4b5563';
+        }
+
+        // Display final result in the stimulus box
+        stimulusBox.style.backgroundColor = finalColor; 
+        stimulusText.innerHTML = `
+            ${finalTitle}<br>
+            <span class="text-xl font-normal block text-white mt-4">${finalMessage}</span>
+            <span class="text-sm font-light block text-gray-200/80 mt-2">Inhibition Rate: ${noGoInhibition.toFixed(1)}%</span>
+            <span class="text-xs font-light block text-gray-200/50 mt-4">Tap to Restart</span>
+        `;
+        
+        // Update button for restart
+        goButton.textContent = 'Start New Elite Test';
+    }
+
+    // --- EVENT LISTENERS ---
+    
+    // Spacebar listener (retained for desktop users)
+    document.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' && isGameRunning) {
+            e.preventDefault(); // Prevent scrolling
+            handleResponse();
+        }
+    });
+
+    // Unified click handler for the 'TAP TO RESPOND' button (Handles Start/Response)
+    goButton.addEventListener('click', () => {
+        if (!isGameRunning) {
+            startGame();
+        } else {
+            handleResponse();
+        }
+    });
+    
+    // Stimulus box click listener for mobile touch (Handles Start/Response)
+    stimulusBox.addEventListener('click', () => {
+        if (!isGameRunning) {
+            startGame();
+        } else {
+            handleResponse();
+        }
+    });
+    
+    // Initial setup on load
+    document.addEventListener('DOMContentLoaded', () => {
+        updateScoreboard(); 
+    });
+
+</script>

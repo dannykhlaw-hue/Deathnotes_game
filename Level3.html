@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deathnotes-Level 3: Color Challenge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Font and Base Styles */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; 
+            display: flex;
+            flex-direction: column; /* Changed to column to stack grid and streak display */
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        /* Game Board Container */
+        .grid-container {
+            width: clamp(320px, 90vw, 550px);
+            height: clamp(320px, 90vw, 550px);
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+            gap: 4px;
+            padding: 4px;
+            background-color: #1f2937; /* Dark Gray background */
+            border-radius: 1.5rem;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+            transition: all 0.3s ease;
+        }
+
+        /* Tile Style */
+        .tile {
+            border-radius: 0.5rem;
+            transition: transform 0.1s;
+            cursor: pointer;
+        }
+
+        .tile:active {
+            transform: scale(0.95);
+        }
+
+        /* UI Elements - Used only for central messages (Start/End) */
+        .ui-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            padding: 1rem;
+            z-index: 30; /* Ensure overlay is above everything else */
+            pointer-events: none;
+            max-width: 90%;
+            background-color: rgba(0, 0, 0, 0.7); /* Added background for better contrast */
+            border-radius: 1rem;
+            box-shadow: 0 0 30px rgba(255, 255, 255, 0.1);
+        }
+
+        .start-btn {
+            pointer-events: all; 
+            font-weight: 700;
+            border-radius: 0.75rem;
+            padding: 0.75rem 1.5rem;
+            transition: all 0.2s;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        }
+
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center">
+
+    <!-- Scoreboard and Title (Top) -->
+    <div class="absolute top-4 w-full flex justify-around p-4 text-white z-30">
+        <h1 class="text-2xl font-black text-indigo-400 text-center">Level 3: Color Challenge</h1>
+        <div class="text-right">
+            <p class="text-sm text-gray-400 font-bold uppercase tracking-wider">Total Wins: <span id="total-wins" class="text-2xl text-yellow-400 font-mono">0</span></p>
+            <p class="text-xs text-gray-500">Streak Goal: <span class="font-mono">10</span></p>
+        </div>
+    </div>
+
+    <!-- Central Game Area -->
+    <div id="game-container" class="grid-container">
+        <!-- Tiles will be generated here by JavaScript -->
+    </div>
+
+    <!-- Streak Display (RELOCATED: Below the grid, visible during gameplay) -->
+    <div id="streak-display" class="mt-8 text-2xl font-bold bg-gray-700/80 py-2 px-4 rounded-xl shadow-lg hidden text-white">
+        Current Streak: <span id="current-streak" class="text-green-400">0</span> / 10
+    </div>
+
+    <!-- UI Overlay for Messages and Start Button (Only for game state changes/messages) -->
+    <div id="ui-overlay" class="ui-center text-white">
+        <h2 id="main-message" class="text-4xl font-extrabold mb-4">Spot the Difference</h2>
+        <p id="sub-message" class="text-lg text-gray-300 mb-6">Find the tile with the slightly different color. Get 10 in a row to win!</p>
+        
+        <!-- Button Container to manage visibility -->
+        <div class="space-y-4">
+            <button id="start-btn" class="start-btn bg-indigo-600 text-white text-lg hover:bg-indigo-700">
+                Start Challenge
+            </button>
+            <button id="restart-btn" class="start-btn bg-red-600 text-white text-lg hover:bg-red-700 hidden">
+                Restart Game
+            </button>
+        </div>
+    </div>
+
+<script>
+    // --- GAME CONSTANTS ---
+    const GRID_SIZE = 4;
+    const TOTAL_TILES = GRID_SIZE * GRID_SIZE;
+    const WIN_STREAK_GOAL = 10; // New goal is 10 in a row
+    const INITIAL_DIFFERENCE = 40; // High difference for easy start
+    const DIFFERENCE_DECREMENT = 4; // How much harder it gets each correct guess
+    const MIN_DIFFERENCE = 5; // Absolute minimum difference for difficulty cap
+
+    // --- DOM ELEMENTS ---
+    const gameContainer = document.getElementById('game-container');
+    const startButton = document.getElementById('start-btn');
+    const restartButton = document.getElementById('restart-btn');
+    const mainMessage = document.getElementById('main-message');
+    const subMessage = document.getElementById('sub-message');
+    const uiOverlay = document.getElementById('ui-overlay');
+    const totalWinsDisplay = document.getElementById('total-wins');
+    const streakDisplay = document.getElementById('streak-display');
+    const currentStreakDisplay = document.getElementById('current-streak');
+
+    // --- GAME STATE ---
+    let isGameRunning = false;
+    let targetTileIndex = -1;
+    let colorDifference = INITIAL_DIFFERENCE;
+    let currentStreak = 0;
+    let totalWins = 0;
+
+    // --- HELPER FUNCTIONS ---
+
+    // Function to convert RGB components to a hex color string
+    function rgbToHex(r, g, b) {
+        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1).toUpperCase();
+    }
+
+    // Function to ensure color component stays within 0-255 range
+    function clamp(value) {
+        return Math.max(0, Math.min(255, value));
+    }
+
+    // Generates the base and target colors, ensuring a visual difference
+    function generateColors() {
+        // 1. Generate a random base color (R, G, B)
+        const baseR = Math.floor(Math.random() * 200) + 20;
+        const baseG = Math.floor(Math.random() * 200) + 20;
+        const baseB = Math.floor(Math.random() * 200) + 20;
+
+        const baseColorHex = rgbToHex(baseR, baseG, baseB);
+
+        // 2. Determine which component(s) to modify for the target color
+        const componentToModify = Math.floor(Math.random() * 3); // 0=R, 1=G, 2=B
+        const direction = Math.random() < 0.5 ? 1 : -1; // Brighter or darker
+
+        let targetR = baseR;
+        let targetG = baseG;
+        let targetB = baseB;
+
+        const diff = Math.max(MIN_DIFFERENCE, colorDifference); // Use current difficulty
+
+        switch (componentToModify) {
+            case 0: // Red
+                targetR = clamp(baseR + diff * direction);
+                break;
+            case 1: // Green
+                targetG = clamp(baseG + diff * direction);
+                break;
+            case 2: // Blue
+                targetB = clamp(baseB + diff * direction);
+                break;
+        }
+
+        const targetColorHex = rgbToHex(targetR, targetG, targetB);
+
+        return { baseColor: baseColorHex, targetColor: targetColorHex };
+    }
+
+    function loadGameData() {
+        const storedWins = localStorage.getItem('colorChallengeTotalWins');
+        totalWins = storedWins ? parseInt(storedWins, 10) : 0;
+        totalWinsDisplay.textContent = totalWins;
+    }
+
+    function updateScoreDisplay() {
+        totalWinsDisplay.textContent = totalWins;
+        currentStreakDisplay.textContent = currentStreak;
+    }
+
+    // Refactored updateUI to take an explicit state for clarity and robustness
+    function updateUI(message, sub, state = 'initial') { // state is 'initial', 'win', 'loss', 'in-game'
+        mainMessage.textContent = message;
+        subMessage.textContent = sub;
+        updateScoreDisplay();
+
+        // Reset button visibility
+        startButton.classList.add('hidden');
+        restartButton.classList.add('hidden');
+
+        if (state === 'in-game') {
+            // Hide the central message overlay and show the streak counter
+            uiOverlay.classList.add('hidden');
+            streakDisplay.classList.remove('hidden');
+            gameContainer.style.pointerEvents = 'auto'; // Enable grid clicks
+        } else {
+            // Show the central message overlay (Start/End screen) and hide the streak counter
+            uiOverlay.classList.remove('hidden');
+            streakDisplay.classList.add('hidden');
+            gameContainer.style.pointerEvents = 'none'; // Disable grid clicks
+            
+            // Show the appropriate button based on the explicit state
+            if (state === 'win') {
+                startButton.textContent = "Start New Challenge";
+                startButton.classList.remove('hidden');
+            } else if (state === 'loss') {
+                // This is the message and button for the incorrect answer
+                restartButton.classList.remove('hidden');
+            } else {
+                // Initial state
+                startButton.textContent = "Start Challenge";
+                startButton.classList.remove('hidden');
+            }
+        }
+    }
+    
+    // --- GAME LOGIC ---
+
+    function startGame() {
+        isGameRunning = true;
+        currentStreak = 0;
+        colorDifference = INITIAL_DIFFERENCE;
+        // The 'in-game' state will be set by generateGrid
+        generateGrid();
+    }
+
+    function generateGrid() {
+        gameContainer.innerHTML = ''; // Clear board
+        
+        const colors = generateColors();
+        
+        // Pick one tile to be the target
+        targetTileIndex = Math.floor(Math.random() * TOTAL_TILES);
+
+        for (let i = 0; i < TOTAL_TILES; i++) {
+            const tile = document.createElement('div');
+            tile.classList.add('tile');
+            tile.style.backgroundColor = (i === targetTileIndex) ? colors.targetColor : colors.baseColor;
+            tile.dataset.isTarget = (i === targetTileIndex) ? 'true' : 'false';
+            tile.dataset.index = i;
+            tile.addEventListener('click', handleTileClick);
+            gameContainer.appendChild(tile);
+        }
+
+        updateUI("Find the Different Tile!", "Difficulty: EASY", 'in-game');
+    }
+    
+    function handleTileClick(event) {
+        if (!isGameRunning) return;
+
+        const tile = event.currentTarget;
+        const isCorrect = tile.dataset.isTarget === 'true';
+
+        // Disable clicks briefly to prevent spamming/double clicks
+        gameContainer.style.pointerEvents = 'none';
+
+        if (isCorrect) {
+            // Correct Guess
+            tile.style.backgroundColor = '#10b981'; // Green flash
+            currentStreak++;
+
+            if (currentStreak >= WIN_STREAK_GOAL) {
+                // Round Win!
+                totalWins++;
+                localStorage.setItem('colorChallengeTotalWins', totalWins);
+                isGameRunning = false;
+                updateUI("CHALLENGE COMPLETE! 🎉", "You got 10 in a row! Start a new round.", 'win');
+                
+            } else {
+                // Correct, continue to next level with increased difficulty
+                colorDifference = Math.max(MIN_DIFFERENCE, colorDifference - DIFFERENCE_DECREMENT);
+                const difficultyMessage = colorDifference <= 10 ? "EXTREME" : colorDifference <= 20 ? "HARD" : "MEDIUM";
+                
+                // Delay before generating next grid
+                setTimeout(generateGrid, 500);
+            }
+        } else {
+            // Incorrect Guess - Game Over for the streak
+            tile.style.backgroundColor = '#ef4444'; // Red flash
+            const targetTile = document.querySelector(`[data-index="${targetTileIndex}"]`);
+            targetTile.style.border = '4px solid #fcd34d'; // Highlight missed tile
+
+            isGameRunning = false;
+            // Display the loss message and the RESTART button (explicitly setting state to 'loss')
+            updateUI("INCORRECT! ❌", `Streak lost at ${currentStreak}. Click RESTART to try again.`, 'loss');
+            
+            currentStreak = 0;
+            colorDifference = INITIAL_DIFFERENCE; // Reset difficulty
+
+            // No need to re-enable clicks since we are in the 'loss' state (pointer-events: none)
+        }
+    }
+
+    // --- INITIALIZATION ---
+    function init() {
+        loadGameData();
+        startButton.addEventListener('click', startGame);
+        restartButton.addEventListener('click', startGame); // Listen for the restart button
+        updateUI("Spot the Difference", "Find the tile with the slightly different color. Get 10 in a row to win!"); // Initial state (defaults to 'initial')
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+</script>
+
+</body>
+</html>

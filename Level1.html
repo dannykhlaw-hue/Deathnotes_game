@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deathnotes-Level 1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; 
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            user-select: none;
+        }
+        .container {
+            max-width: 500px;
+            width: 95%;
+            padding: 2rem 1.5rem;
+            border-radius: 1.5rem;
+            background: white;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        
+        /* Connect Four Board Styling */
+        .board-wrapper {
+            background-color: #3b82f6; /* Connect Four Blue */
+            padding: 0.5rem;
+            border-radius: 1rem;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            grid-template-rows: repeat(6, 1fr);
+            gap: 0.5rem;
+        }
+        .cell {
+            position: relative;
+            aspect-ratio: 1 / 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: white; /* The empty hole color */
+            border-radius: 50%;
+            cursor: pointer;
+            transition: background-color 0.1s;
+        }
+
+        /* Player pieces */
+        .piece {
+            width: 90%;
+            height: 90%;
+            border-radius: 50%;
+            transition: background-color 0.3s;
+        }
+        .x .piece {
+            background-color: #ef4444; /* Red for X (Human) */
+        }
+        .o .piece {
+            background-color: #f59e0b; /* Yellow for O (AI) */
+        }
+
+        /* Hover effect on columns */
+        .column-hover {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 0.5rem;
+            padding: 0.5rem;
+            pointer-events: none; /* Allows clicks to pass through to the underlying cells */
+        }
+        .column-hover > div {
+            height: 100%;
+            transition: background-color 0.2s;
+            border-radius: 0.5rem;
+            pointer-events: auto; /* Re-enable pointer events for the hover divs */
+        }
+        .column-hover > div:hover {
+            background-color: rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+        }
+
+        /* Status animation for a win/loss */
+        .win-message {
+            animation: bounce 0.5s ease-in-out infinite alternate;
+        }
+        @keyframes bounce {
+            from { transform: translateY(0px); }
+            to { transform: translateY(-5px); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container" class="container">
+    <h1 class="text-3xl font-black text-center mb-4 text-gray-800">
+        Connect Four Blitz
+    </h1>
+    
+    <!-- Player Legend -->
+    <div class="flex justify-center space-x-4 mb-4 text-sm font-semibold">
+        <span class="flex items-center">
+            <div class="w-4 h-4 rounded-full bg-red-500 mr-2 shadow"></div>
+            You (Red)
+        </span>
+        <span class="flex items-center">
+            <div class="w-4 h-4 rounded-full bg-yellow-500 mr-2 shadow"></div>
+            AI (Yellow)
+        </span>
+    </div>
+
+    <!-- Scoreboard -->
+    <div id="score-display" class="flex justify-around items-center mb-4 p-3 rounded-xl bg-gray-100 shadow-inner">
+        <div class="text-center">
+            <span class="text-sm font-semibold text-red-600">You (Red)</span>
+            <div id="human-score" class="text-3xl font-black text-gray-800">0</div>
+        </div>
+        <div class="text-center">
+            <span class="text-xl font-black text-gray-400">|</span>
+        </div>
+        <div class="text-center">
+            <span class="text-sm font-semibold text-yellow-600">AI (Yellow)</span>
+            <div id="ai-score" class="text-3xl font-black text-gray-800">0</div>
+        </div>
+    </div>
+
+    <!-- Game Status Display -->
+    <div id="status-display" class="p-4 mb-6 text-center rounded-xl font-bold bg-blue-100 text-blue-700 transition duration-300">
+        Click "Start New Game" to begin!
+    </div>
+
+    <!-- The Game Board and Hover Layer -->
+    <div class="relative">
+        <div id="game-board" class="board-wrapper">
+            <!-- Cells generated dynamically by JavaScript -->
+        </div>
+        <!-- Column Click/Hover Layer -->
+        <div id="column-click-layer" class="column-hover absolute top-0 left-0 w-full h-full">
+            <!-- Click handlers generated dynamically by JavaScript -->
+        </div>
+    </div>
+    
+    <!-- Controls -->
+    <div class="space-y-4 mt-6">
+        <button id="start-btn"
+                class="w-full bg-indigo-600 text-white py-3 rounded-xl text-xl font-bold hover:bg-indigo-700 transition duration-150 shadow-lg active:shadow-none active:translate-y-0.5">
+            Start New Game
+        </button>
+        <p class="text-xs text-center text-gray-400">
+            Note: The AI is moderately strategic (checks for wins and blocks). First player to 5 points wins the overall game!
+        </p>
+    </div>
+</div>
+
+<script>
+    // --- GAME CONSTANTS ---
+    const ROWS = 6;
+    const COLS = 7;
+    const EMPTY = '';
+    const HUMAN = 'X'; // Red
+    const AI = 'O';    // Yellow
+    const MAX_SCORE = 5; // The overall score needed to win the championship
+    
+    // --- GAME STATE ---
+    let board = [];
+    let currentPlayer = HUMAN;
+    let gameActive = false;
+    let humanScore = 0;
+    let aiScore = 0;
+    
+    // --- DOM ELEMENTS ---
+    const boardElement = document.getElementById('game-board');
+    const clickLayerElement = document.getElementById('column-click-layer');
+    const statusDisplay = document.getElementById('status-display');
+    const startButton = document.getElementById('start-btn');
+    const humanScoreDisplay = document.getElementById('human-score');
+    const aiScoreDisplay = document.getElementById('ai-score');
+
+    // --- HELPER FUNCTIONS ---
+
+    // Initializes the board array with 6 rows and 7 columns of empty strings
+    function initializeBoardArray() {
+        board = Array(ROWS).fill(0).map(() => Array(COLS).fill(EMPTY));
+    }
+
+    // Creates the visual grid of cells
+    function createBoard() {
+        boardElement.innerHTML = '';
+        clickLayerElement.innerHTML = '';
+        
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.dataset.row = r;
+                cell.dataset.col = c;
+                // Add the inner piece element for visual update
+                const piece = document.createElement('div');
+                piece.classList.add('piece');
+                cell.appendChild(piece);
+                boardElement.appendChild(cell);
+            }
+        }
+        
+        // Create click/hover handlers for each column
+        for (let c = 0; c < COLS; c++) {
+            const colClickArea = document.createElement('div');
+            colClickArea.dataset.col = c;
+            colClickArea.addEventListener('click', () => handleColumnClick(c));
+            clickLayerElement.appendChild(colClickArea);
+        }
+    }
+    
+    function updateScoreDisplay() {
+        humanScoreDisplay.textContent = humanScore;
+        aiScoreDisplay.textContent = aiScore;
+    }
+
+    function updateStatus(message, isResult) {
+        statusDisplay.textContent = message;
+        statusDisplay.className = 'p-4 mb-6 text-center rounded-xl font-bold transition duration-300';
+        
+        if (isResult === 'WIN') {
+            statusDisplay.classList.add('bg-green-500', 'text-white', 'shadow-xl', 'win-message');
+        } else if (isResult === 'LOSE') {
+            statusDisplay.classList.add('bg-red-500', 'text-white', 'shadow-xl', 'win-message');
+        } else if (isResult === 'DRAW') {
+            statusDisplay.classList.add('bg-yellow-500', 'text-gray-900', 'shadow-xl', 'win-message');
+        } else if (currentPlayer === HUMAN) {
+            statusDisplay.classList.add('bg-red-100', 'text-red-700');
+        } else {
+            statusDisplay.classList.add('bg-yellow-100', 'text-yellow-700');
+        }
+    }
+
+    // Finds the next available row (lowest empty spot) in a column
+    function getNextAvailableRow(col, currentBoard) {
+        for (let r = ROWS - 1; r >= 0; r--) {
+            if (currentBoard[r][col] === EMPTY) {
+                return r;
+            }
+        }
+        return -1; // Column is full
+    }
+    
+    // --- GAME FLOW LOGIC ---
+
+    function handleColumnClick(colIndex) {
+        if (!gameActive || currentPlayer !== HUMAN) {
+            return;
+        }
+
+        const rowIndex = getNextAvailableRow(colIndex, board);
+        if (rowIndex !== -1) {
+            makeMove(rowIndex, colIndex, HUMAN);
+        } else {
+            console.log(`Column ${colIndex} is full.`);
+        }
+    }
+    
+    function makeMove(row, col, player) {
+        // 1. Update State
+        board[row][col] = player;
+
+        // 2. Update UI
+        const cellIndex = row * COLS + col;
+        const cellElement = boardElement.children[cellIndex];
+        cellElement.classList.add(player.toLowerCase());
+
+        // 3. Check Result
+        if (checkWin(row, col, player)) {
+            endGame(player);
+            return;
+        }
+
+        if (checkDraw()) {
+            endGame(null); // It's a draw
+            return;
+        }
+
+        // 4. Switch Turns
+        currentPlayer = (player === HUMAN) ? AI : HUMAN;
+        updateStatus(`AI's turn ('O'). Thinking...`, null);
+
+        // 5. Trigger AI if it's AI's turn
+        if (currentPlayer === AI) {
+            setTimeout(aiMove, 700); // Delay for visual effect
+        } else {
+            updateStatus(`Your turn ('X'). Drop a piece.`, null);
+        }
+    }
+
+    function checkDraw() {
+        return board[0].every(cell => cell !== EMPTY);
+    }
+    
+    function endGame(winner) {
+        gameActive = false;
+        clickLayerElement.style.pointerEvents = 'none'; // Disable clicking
+        
+        let overallWinner = null;
+
+        if (winner === HUMAN) {
+            humanScore++;
+            updateStatus('🎉 YOU WIN THIS ROUND! Four in a row!', 'WIN');
+        } else if (winner === AI) {
+            aiScore++;
+            updateStatus('🤖 AI WINS THIS ROUND! Better luck next time.', 'LOSE');
+        } else {
+            updateStatus('🤝 DRAW! The board is full. No score change.', 'DRAW');
+        }
+
+        updateScoreDisplay();
+        
+        // Check for overall victory (first to MAX_SCORE)
+        if (humanScore >= MAX_SCORE) {
+            overallWinner = HUMAN;
+        } else if (aiScore >= MAX_SCORE) {
+            overallWinner = AI;
+        }
+        
+        if (overallWinner) {
+            const winnerText = overallWinner === HUMAN ? "YOU" : "the AI";
+            updateStatus(`🏆 CHAMPIONSHIP OVER! ${winnerText} WINS! (Reached ${MAX_SCORE} points)! Click "Start New Game" to reset scores.`, 'WIN');
+            startButton.textContent = "Start New Championship";
+        } else {
+             startButton.textContent = "Start Next Round";
+        }
+    }
+
+    // --- WINNING LOGIC (Connect Four) ---
+
+    function checkWin(r, c, player) {
+        // This function checks the win condition only at the specified (r, c)
+        return checkDirection(r, c, player, 0, 1) ||  // Horizontal
+               checkDirection(r, c, player, 1, 0) ||  // Vertical
+               checkDirection(r, c, player, 1, 1) ||  // Diagonal (down-right / up-left)
+               checkDirection(r, c, player, 1, -1);   // Diagonal (down-left / up-right)
+    }
+
+    function checkDirection(r, c, player, dr, dc) {
+        // Optimized to check 4-in-a-row centering on the placed piece (r, c)
+        let tempCount = 0;
+        
+        // Search across 7 positions (-3 to +3 offset from piece)
+        for(let i = -3; i <= 3; i++) {
+            let nextR = r + i * dr;
+            let nextC = c + i * dc;
+            
+            if (nextR >= 0 && nextR < ROWS && nextC >= 0 && nextC < COLS && board[nextR][nextC] === player) {
+                tempCount++;
+                if (tempCount >= 4) return true;
+            } else {
+                tempCount = 0;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Strategic check: Finds the first move (column index) that results in a win
+     * for the given player. Returns the column index or -1 if no win found.
+     */
+    function findWinningMove(player) {
+        for (let c = 0; c < COLS; c++) {
+            const r = getNextAvailableRow(c, board);
+            if (r !== -1) {
+                // Temporarily place the piece
+                board[r][c] = player;
+                
+                // Check if this move wins the game
+                const isWin = checkWin(r, c, player);
+                
+                // Undo the temporary move
+                board[r][c] = EMPTY;
+                
+                if (isWin) {
+                    return c;
+                }
+            }
+        }
+        return -1; // No winning move found
+    }
+
+
+    // --- MEDIUM AI LOGIC ---
+    
+    function aiMove() {
+        if (!gameActive || currentPlayer !== AI) return;
+        
+        let bestMoveCol = -1;
+
+        // 1. Check for AI's own winning move (Priority 1)
+        bestMoveCol = findWinningMove(AI);
+        if (bestMoveCol !== -1) {
+            console.log("AI took winning move.");
+        } else {
+            // 2. Check for Human's winning move (Priority 2 - Block)
+            bestMoveCol = findWinningMove(HUMAN);
+            if (bestMoveCol !== -1) {
+                console.log("AI blocked human win.");
+            } else {
+                // 3. Fallback to Random Move (Priority 3)
+                const availableCols = [];
+                for (let c = 0; c < COLS; c++) {
+                    if (getNextAvailableRow(c, board) !== -1) {
+                        availableCols.push(c);
+                    }
+                }
+
+                if (availableCols.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * availableCols.length);
+                    bestMoveCol = availableCols[randomIndex];
+                    console.log("AI chose random move.");
+                } else {
+                    // Should trigger draw check
+                    checkDraw();
+                    return;
+                }
+            }
+        }
+        
+        // Execute the determined move
+        const rowIndex = getNextAvailableRow(bestMoveCol, board);
+        if (rowIndex !== -1) {
+            makeMove(rowIndex, bestMoveCol, AI);
+        }
+    }
+    
+    // --- INITIALIZATION ---
+    
+    function resetGame() {
+        // Reset scores only if a new championship is starting (i.e., someone just won, or first load)
+        if (startButton.textContent === "Start New Championship" || startButton.textContent === "Start New Game") {
+             humanScore = 0;
+             aiScore = 0;
+             updateScoreDisplay();
+        }
+
+        initializeBoardArray();
+        currentPlayer = HUMAN;
+        gameActive = true;
+        
+        createBoard();
+        updateStatus("Your turn (Red). Drop a piece.", null);
+        clickLayerElement.style.pointerEvents = 'auto'; // Re-enable clicking
+        startButton.textContent = "Restart Round";
+    }
+    
+    startButton.addEventListener('click', resetGame);
+    
+    // Initial board setup on load
+    document.addEventListener('DOMContentLoaded', () => {
+        createBoard();
+        updateScoreDisplay(); // Show initial 0-0 score
+    });
+
+</script>
+
+</body>
+</html>

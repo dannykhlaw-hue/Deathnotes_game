@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect Four Blitz (Depth 4, Less Flawed)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Based on the style of the Elite Inhibition Test */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; /* Deep Black/Blue BG */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            user-select: none;
+        }
+        .container {
+            max-width: 500px;
+            width: 95%;
+            padding: 2rem 1.5rem;
+            border-radius: 1.5rem;
+            background: #1f2937; /* Dark Gray Card BG */
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7); /* Stronger dark shadow */
+        }
+        
+        /* Connect Four Board Styling */
+        .board-wrapper {
+            background-color: #374151; /* Medium Dark Blue/Gray board */
+            padding: 0.5rem;
+            border-radius: 1rem;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            grid-template-rows: repeat(6, 1fr);
+            gap: 0.5rem;
+        }
+        .cell {
+            position: relative;
+            aspect-ratio: 1 / 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #111827; /* Very dark empty hole color */
+            border-radius: 50%;
+            cursor: pointer;
+            transition: background-color 0.1s;
+        }
+
+        /* Player pieces */
+        .piece {
+            width: 90%;
+            height: 90%;
+            border-radius: 50%;
+            transition: background-color 0.3s;
+            /* Added shadow/glow to pieces for dark contrast */
+        }
+        .x .piece {
+            background-color: #ef4444; /* Red for X (Human) */
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.7); 
+        }
+        .o .piece {
+            background-color: #f59e0b; /* Yellow/Orange for O (AI) */
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.7);
+        }
+
+        /* Hover effect on columns */
+        .column-hover {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 0.5rem;
+            padding: 0.5rem;
+            pointer-events: none; 
+        }
+        .column-hover > div {
+            height: 100%;
+            transition: background-color 0.2s;
+            border-radius: 0.5rem;
+            pointer-events: auto; 
+        }
+        .column-hover > div:hover {
+            background-color: rgba(255, 255, 255, 0.1); /* Subtle hover effect */
+            cursor: pointer;
+        }
+
+        /* Status animation for a win/loss */
+        .win-message {
+            animation: bounce 0.5s ease-in-out infinite alternate;
+        }
+        @keyframes bounce {
+            from { transform: translateY(0px); }
+            to { transform: translateY(-5px); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container" class="container">
+    <h1 class="text-3xl font-black text-center mb-4 text-white">
+        Connect Four Blitz
+    </h1>
+    
+    <div class="flex justify-center space-x-4 mb-4 text-sm font-semibold text-gray-300">
+        <span class="flex items-center">
+            <div class="w-4 h-4 rounded-full bg-red-500 mr-2 shadow"></div>
+            You (Red)
+        </span>
+        <span class="flex items-center">
+            <div class="w-4 h-4 rounded-full bg-yellow-500 mr-2 shadow"></div>
+            AI (Yellow)
+            <span class="ml-2 text-xs text-yellow-300"></span>
+        </span>
+    </div>
+
+    <div id="score-display" class="flex justify-around items-center mb-4 p-3 rounded-xl bg-gray-900 shadow-inner">
+        <div class="text-center">
+            <span class="text-sm font-semibold text-red-400">You (Red)</span>
+            <div id="human-score" class="text-3xl font-black text-white">0</div>
+        </div>
+        <div class="text-center">
+            <span class="text-xl font-black text-gray-600">|</span>
+        </div>
+        <div class="text-center">
+            <span class="text-sm font-semibold text-yellow-400">AI (Yellow)</span>
+            <div id="ai-score" class="text-3xl font-black text-white">0</div>
+        </div>
+    </div>
+
+    <div id="status-display" class="p-4 mb-6 text-center rounded-xl font-bold bg-gray-700 text-blue-400 transition duration-300">
+        Click "Start New Game" to begin!
+    </div>
+
+    <div class="relative">
+        <div id="game-board" class="board-wrapper">
+            </div>
+        <div id="column-click-layer" class="column-hover absolute top-0 left-0 w-full h-full">
+            </div>
+    </div>
+    
+    <div class="space-y-4 mt-6">
+        <button id="start-btn"
+                class="w-full bg-indigo-600 text-white py-3 rounded-xl text-xl font-bold hover:bg-indigo-700 transition duration-150 shadow-lg active:shadow-none active:translate-y-0.5">
+            Start New Game
+        </button>
+        <p class="text-xs text-center text-gray-400">
+            Note: Starting player rotates each round. First to gets 3 wins (Best-of-3).
+        </p>
+    </div>
+</div>
+
+<script>
+    // --- GAME CONSTANTS ---
+    const ROWS = 6;
+    const COLS = 7;
+    const EMPTY = '';
+    const HUMAN = 'X'; // Red
+    const AI = 'O';    // Yellow
+    
+    // --- ADJUSTED DIFFICULTY AND GAME LENGTH ---
+    const MAX_SCORE = 3; // CHAMPIONSHIP NOW BEST-OF-3 (down from 5)
+    const SEARCH_DEPTH = 4; // AI looks 4 moves ahead (up from 3 for better defense/offense)
+    const FLAW_CHANCE = 0.10; // AI's chance to make a mistake is 10% (down from 20%)
+
+    const WINNING_SCORE = 1000000; // High score for a win
+    
+
+    // --- GAME STATE ---
+    let board = [];
+    let currentPlayer = HUMAN;
+    let gameActive = false;
+    let humanScore = 0;
+    let aiScore = 0;
+    let roundNumber = 0; // Tracks the number of rounds played for rotation logic
+    
+    // --- DOM ELEMENTS ---
+    const boardElement = document.getElementById('game-board');
+    const clickLayerElement = document.getElementById('column-click-layer');
+    const statusDisplay = document.getElementById('status-display');
+    const startButton = document.getElementById('start-btn');
+    const humanScoreDisplay = document.getElementById('human-score');
+    const aiScoreDisplay = document.getElementById('ai-score');
+
+    // --- HELPER FUNCTIONS ---
+
+    // Initializes the board array with 6 rows and 7 columns of empty strings
+    function initializeBoardArray() {
+        board = Array(ROWS).fill(0).map(() => Array(COLS).fill(EMPTY));
+    }
+
+    // Finds the next available row (lowest empty spot) in a column
+    function getNextAvailableRow(col, currentBoard) {
+        for (let r = ROWS - 1; r >= 0; r--) {
+            if (currentBoard[r][col] === EMPTY) {
+                return r;
+            }
+        }
+        return -1; // Column is full
+    }
+
+    // Creates the visual grid of cells
+    function createBoard() {
+        boardElement.innerHTML = '';
+        clickLayerElement.innerHTML = '';
+        
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.dataset.row = r;
+                cell.dataset.col = c;
+                const piece = document.createElement('div');
+                piece.classList.add('piece');
+                cell.appendChild(piece);
+                boardElement.appendChild(cell);
+            }
+        }
+        
+        // Create click/hover handlers for each column
+        for (let c = 0; c < COLS; c++) {
+            const colClickArea = document.createElement('div');
+            colClickArea.dataset.col = c;
+            colClickArea.addEventListener('click', () => handleColumnClick(c));
+            clickLayerElement.appendChild(colClickArea);
+        }
+    }
+    
+    function updateScoreDisplay() {
+        humanScoreDisplay.textContent = humanScore;
+        aiScoreDisplay.textContent = aiScore;
+    }
+
+    function updateStatus(message, isResult) {
+        statusDisplay.textContent = message;
+        statusDisplay.className = 'p-4 mb-6 text-center rounded-xl font-bold transition duration-300';
+        
+        if (isResult === 'WIN') {
+            statusDisplay.classList.add('bg-green-600', 'text-white', 'shadow-xl', 'win-message');
+        } else if (isResult === 'LOSE') {
+            statusDisplay.classList.add('bg-red-600', 'text-white', 'shadow-xl', 'win-message');
+        } else if (isResult === 'DRAW') {
+            statusDisplay.classList.add('bg-yellow-500', 'text-gray-900', 'shadow-xl', 'win-message');
+        } else if (currentPlayer === HUMAN) {
+            statusDisplay.classList.add('bg-red-900/50', 'text-red-400');
+        } else {
+            statusDisplay.classList.add('bg-yellow-900/50', 'text-yellow-400');
+        }
+    }
+
+    // --- GAME FLOW LOGIC ---
+
+    function handleColumnClick(colIndex) {
+        if (!gameActive || currentPlayer !== HUMAN) {
+            return;
+        }
+
+        const rowIndex = getNextAvailableRow(colIndex, board);
+        if (rowIndex !== -1) {
+            makeMove(rowIndex, colIndex, HUMAN);
+        } else {
+            // console.log(`Column ${colIndex} is full.`);
+        }
+    }
+    
+    function makeMove(row, col, player) {
+        // 1. Update State
+        board[row][col] = player;
+
+        // 2. Update UI
+        const cellIndex = row * COLS + col;
+        const cellElement = boardElement.children[cellIndex];
+        cellElement.classList.add(player.toLowerCase());
+
+        // 3. Check Result
+        if (checkWin(row, col, player)) {
+            endGame(player);
+            return;
+        }
+
+        if (checkDraw()) {
+            endGame(null); // It's a draw
+            return;
+        }
+
+        // 4. Switch Turns
+        currentPlayer = (player === HUMAN) ? AI : HUMAN;
+        
+        // 5. Trigger AI if it's AI's turn
+        if (currentPlayer === AI) {
+            updateStatus(`AI's turn ('O'). Thinking...`, null);
+            setTimeout(aiMove, 700); // Delay for visual effect
+        } else {
+            updateStatus(`Your turn ('X'). Drop a piece.`, null);
+        }
+    }
+
+    function checkDraw() {
+        return board[0].every(cell => cell !== EMPTY);
+    }
+    
+    function endGame(winner) {
+        gameActive = false;
+        clickLayerElement.style.pointerEvents = 'none'; // Disable clicking
+        
+        let overallWinner = null;
+
+        if (winner === HUMAN) {
+            humanScore++;
+            updateStatus('🎉 YOU WIN THIS ROUND! Four in a row!', 'WIN');
+        } else if (winner === AI) {
+            aiScore++;
+            updateStatus('🤖 AI WINS THIS ROUND! Better luck next time.', 'LOSE');
+        } else {
+            updateStatus('🤝 DRAW! The board is full. No score change.', 'DRAW');
+        }
+
+        updateScoreDisplay();
+        
+        // Check for overall victory (first to MAX_SCORE)
+        if (humanScore >= MAX_SCORE) {
+            overallWinner = HUMAN;
+        } else if (aiScore >= MAX_SCORE) {
+            overallWinner = AI;
+        }
+        
+        if (overallWinner) {
+            const winnerText = overallWinner === HUMAN ? "YOU" : "the AI";
+            updateStatus(`🏆 CHAMPIONSHIP OVER! ${winnerText} WINS! (Reached ${MAX_SCORE} points)! Click "Start New Game" to reset scores.`, 'WIN');
+            startButton.textContent = "Start New Championship";
+        } else {
+             startButton.textContent = "Start Next Round";
+        }
+    }
+
+    // --- WINNING/EVALUATION LOGIC (Minimax Helpers) ---
+
+    // Checks for a win condition at a specific (r, c) on a given board
+    function checkWin(r, c, player, currentBoard = board) {
+        if (r < 0 || c < 0 || r >= ROWS || c >= COLS) return false;
+
+        const checkDirection = (dr, dc) => {
+            let tempCount = 0;
+            for(let i = -3; i <= 3; i++) {
+                let nextR = r + i * dr;
+                let nextC = c + i * dc;
+                
+                if (nextR >= 0 && nextR < ROWS && nextC >= 0 && nextC < COLS && currentBoard[nextR][nextC] === player) {
+                    tempCount++;
+                    if (tempCount >= 4) return true;
+                } else {
+                    tempCount = 0;
+                }
+            }
+            return false;
+        };
+
+        return checkDirection(0, 1) ||  // Horizontal
+               checkDirection(1, 0) ||  // Vertical
+               checkDirection(1, 1) ||  // Diagonal (down-right / up-left)
+               checkDirection(1, -1);   // Diagonal (down-left / up-right)
+    }
+
+    // Evaluates a 4-cell window for scoring (Enhanced for better defense/offense)
+    function evaluateWindow(window, player, opponent) {
+        let score = 0;
+        const playerCount = window.filter(p => p === player).length;
+        const opponentCount = window.filter(p => p === opponent).length;
+        const emptyCount = window.filter(p => p === EMPTY).length;
+
+        if (playerCount === 4) {
+            score += WINNING_SCORE; 
+        } else if (playerCount === 3 && emptyCount === 1) {
+            score += 100; // INCREASED: Strong offensive threat (up from 50)
+        } else if (playerCount === 2 && emptyCount === 2) {
+            score += 15; // Slightly increased low offensive threat (up from 10)
+        }
+
+        // CRITICAL: High penalty for opponent's guaranteed 3-in-a-row threat (DEFENSE)
+        if (opponentCount === 3 && emptyCount === 1) {
+            score -= 1000; // INCREASED: Strong defense block priority (up from 500)
+        }
+        // Penalty for opponent's guaranteed 2-in-a-row threat that could lead to a win
+        else if (opponentCount === 2 && emptyCount === 2) {
+            score -= 30;
+        }
+
+        return score;
+    }
+
+    // Evaluates the entire board state for a given player
+    function evaluateBoard(currentBoard, player) {
+        let score = 0;
+        const opponent = (player === HUMAN) ? AI : HUMAN;
+
+        // 1. Center Column: Prefer moves in the center column (C3)
+        for (let r = 0; r < ROWS; r++) {
+            if (currentBoard[r][3] === player) {
+                score += 5; // Slightly increased center priority
+            }
+        }
+
+        // 2. Scan all 4-cell windows (Horizontal, Vertical, Diagonals)
+        
+        // Horizontal Check
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c <= COLS - 4; c++) {
+                const window = currentBoard[r].slice(c, c + 4);
+                score += evaluateWindow(window, player, opponent);
+            }
+        }
+
+        // Vertical Check
+        for (let c = 0; c < COLS; c++) {
+            for (let r = 0; r <= ROWS - 4; r++) {
+                const window = [currentBoard[r][c], currentBoard[r+1][c], currentBoard[r+2][c], currentBoard[r+3][c]];
+                score += evaluateWindow(window, player, opponent);
+            }
+        }
+
+        // Positive Diagonal Check (Bottom-left to Top-right)
+        for (let r = 0; r <= ROWS - 4; r++) {
+            for (let c = 0; c <= COLS - 4; c++) {
+                const window = [currentBoard[r][c], currentBoard[r+1][c+1], currentBoard[r+2][c+2], currentBoard[r+3][c+3]];
+                score += evaluateWindow(window, player, opponent);
+            }
+        }
+
+        // Negative Diagonal Check (Top-right to Bottom-left)
+        for (let r = 0; r <= ROWS - 4; r++) {
+            for (let c = COLS - 1; c >= 3; c--) {
+                const window = [currentBoard[r][c], currentBoard[r+1][c-1], currentBoard[r+2][c-2], currentBoard[r+3][c-3]];
+                score += evaluateWindow(window, player, opponent);
+            }
+        }
+
+        return score;
+    }
+
+    // Checks if the game is over in the current board state
+    function isTerminalNode(currentBoard) {
+        // Check all cells for a win
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const player = currentBoard[r][c];
+                if (player !== EMPTY) {
+                    // Optimized to check win only for the last dropped piece. 
+                    // Since minimax checks wins at terminal nodes, we need to ensure the check is comprehensive or done correctly.
+                    // The original comprehensive check is retained here for simplicity/safety.
+                    if (checkWin(r, c, player, currentBoard)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        // Check for draw (top row is full)
+        return currentBoard[0].every(cell => cell !== EMPTY);
+    }
+    
+    // --- MINIMAX CORE ALGORITHM (Alpha-Beta Pruning) ---
+
+    function minimax(currentBoard, depth, alpha, beta, maximizingPlayer) {
+        const availableCols = [];
+        for (let c = 0; c < COLS; c++) {
+            if (getNextAvailableRow(c, currentBoard) !== -1) {
+                availableCols.push(c);
+            }
+        }
+
+        // Base cases
+        const isGameOver = isTerminalNode(currentBoard);
+        
+        if (depth === 0 || isGameOver) {
+            if (isGameOver) {
+                // Determine the winner of the terminal state
+                let winner = null;
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        const player = currentBoard[r][c];
+                        if (player !== EMPTY && checkWin(r, c, player, currentBoard)) {
+                            winner = player;
+                            break;
+                        }
+                    }
+                    if (winner) break;
+                }
+                
+                if (winner === AI) {
+                    return [null, WINNING_SCORE + depth]; 
+                } else if (winner === HUMAN) {
+                    return [null, -WINNING_SCORE - depth];
+                } else { // Draw
+                    return [null, 0];
+                }
+            } else { // Depth is zero
+                return [null, evaluateBoard(currentBoard, AI)];
+            }
+        }
+        
+        // Move Ordering: Prioritize middle columns 
+        const sortedCols = availableCols.sort((a, b) => Math.abs(3 - a) - Math.abs(3 - b));
+        
+        if (maximizingPlayer) { // AI's turn
+            let value = -Infinity;
+            let bestCol = sortedCols[0] || -1; 
+
+            for (let c of sortedCols) {
+                const r = getNextAvailableRow(c, currentBoard);
+                currentBoard[r][c] = AI;
+                
+                const newScore = minimax(currentBoard, depth - 1, alpha, beta, false)[1];
+                
+                // Undo move (Crucial for recursion)
+                currentBoard[r][c] = EMPTY;
+
+                if (newScore > value) {
+                    value = newScore;
+                    bestCol = c;
+                }
+                
+                alpha = Math.max(alpha, value);
+                if (alpha >= beta) {
+                    break;
+                }
+            }
+            return [bestCol, value];
+
+        } else { // Minimizing player (Human's turn, minimizing AI's score)
+            let value = Infinity;
+            let bestCol = sortedCols[0] || -1;
+
+            for (let c of sortedCols) {
+                const r = getNextAvailableRow(c, currentBoard);
+                currentBoard[r][c] = HUMAN;
+                
+                const newScore = minimax(currentBoard, depth - 1, alpha, beta, true)[1];
+                
+                // Undo move
+                currentBoard[r][c] = EMPTY;
+
+                if (newScore < value) {
+                    value = newScore;
+                    bestCol = c;
+                }
+                
+                beta = Math.min(beta, value);
+                if (alpha >= beta) {
+                    break;
+                }
+            }
+            return [bestCol, value];
+        }
+    }
+
+
+    // --- AI EXECUTION ---
+    
+    function aiMove() {
+        if (!gameActive || currentPlayer !== AI) return;
+        
+        const startTime = Date.now();
+        // Create a deep copy of the board for the search tree
+        const tempBoardForSearch = board.map(arr => [...arr]); 
+        
+        // 1. Calculate the 'True Best Move' using Minimax Depth 4
+        const [bestMoveCol, score] = minimax(tempBoardForSearch, SEARCH_DEPTH, -Infinity, Infinity, true);
+        
+        let chosenCol = bestMoveCol;
+
+        // 2. Introduce the Flaw
+        if (Math.random() < FLAW_CHANCE) {
+            console.log("Flaw triggered! AI is intentionally making a random mistake (10% chance).");
+
+            const availableCols = [];
+            for (let c = 0; c < COLS; c++) {
+                if (getNextAvailableRow(c, board) !== -1) {
+                    availableCols.push(c);
+                }
+            }
+            
+            // Filter out moves that result in an immediate win for the AI (The flaw shouldn't be a guaranteed win)
+            const nonWinningCols = availableCols.filter(col => {
+                const r = getNextAvailableRow(col, board);
+                const tempBoard = board.map(arr => [...arr]);
+                tempBoard[r][col] = AI;
+                const isWin = checkWin(r, col, AI, tempBoard);
+                return !isWin; // Only consider non-winning moves for the mistake
+            });
+
+            if (nonWinningCols.length > 0) {
+                // Pick a random column from the non-winning columns
+                const randomIndex = Math.floor(Math.random() * nonWinningCols.length);
+                chosenCol = nonWinningCols[randomIndex];
+            } else if (availableCols.length > 0) {
+                // If every move leads to an immediate win, the AI must take the win, even with a flaw.
+                chosenCol = bestMoveCol; 
+            }
+        }
+        
+        const endTime = Date.now();
+        console.log(`Minimax search complete (Depth ${SEARCH_DEPTH}). Time: ${endTime - startTime}ms. Chosen Col: ${chosenCol}`);
+
+        // Execute the determined move
+        if (chosenCol !== null && chosenCol !== -1) {
+            const rowIndex = getNextAvailableRow(chosenCol, board);
+            if (rowIndex !== -1) {
+                makeMove(rowIndex, chosenCol, AI);
+            }
+        } else {
+            checkDraw();
+            return;
+        }
+    }
+    
+    // --- INITIALIZATION / RESET ---
+    
+    function resetGame() {
+        let resetChampionship = false;
+
+        // 1. Check if we are starting a brand new championship (scores reset)
+        if (startButton.textContent.includes("Championship") || startButton.textContent === "Start New Game") {
+             humanScore = 0;
+             aiScore = 0;
+             updateScoreDisplay();
+             roundNumber = 0; // Reset round counter
+             resetChampionship = true;
+        }
+
+        // 2. Determine the starting player for the new round
+        roundNumber++;
+        // Human starts round 1, 3, 5... (odd rounds). AI starts 2, 4, 6... (even rounds)
+        let startingPlayer = (roundNumber % 2 !== 0) ? HUMAN : AI; 
+        
+        // Ensure the very first game is always Human-started (Round 1)
+        if (resetChampionship) {
+            startingPlayer = HUMAN;
+        }
+
+
+        initializeBoardArray();
+        currentPlayer = startingPlayer;
+        gameActive = true;
+        
+        createBoard();
+        
+        const startText = startingPlayer === HUMAN ? "Your turn (Red)." : "AI starts (Yellow).";
+        updateStatus(`${startText} Drop a piece.`, null);
+        
+        clickLayerElement.style.pointerEvents = 'auto'; // Re-enable clicking
+        startButton.textContent = "Restart Round";
+
+        // 3. Trigger AI if it starts
+        if (currentPlayer === AI) {
+            // Give a slight delay so the user can read the status message
+            setTimeout(aiMove, 500); 
+        }
+    }
+    
+    startButton.addEventListener('click', resetGame);
+    
+    // Initial board setup on load
+    document.addEventListener('DOMContentLoaded', () => {
+        createBoard();
+        updateScoreDisplay(); // Show initial 0-0 score
+    });
+
+</script>
+
+</body>
+</html>

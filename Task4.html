@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deathnotes-Precision Timing Challenge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Font and Base Styles */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; /* Dark background */
+            display: flex;
+            flex-direction: column; 
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            user-select: none;
+            overflow: hidden;
+            touch-action: manipulation; /* Improves touch responsiveness */
+        }
+
+        #gameCanvas {
+            border-radius: 50%;
+            background-color: #1f2937; /* Dark Gray for the background of the circle area */
+            box-shadow: 0 0 50px rgba(255, 255, 255, 0.1), 0 0 20px rgba(0, 0, 0, 0.5) inset;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .ui-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            padding: 1.5rem 2rem;
+            z-index: 30; 
+            pointer-events: none;
+            max-width: 90%;
+            background-color: rgba(0, 0, 0, 0.85); 
+            border-radius: 1rem;
+            box-shadow: 0 0 40px rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(5px);
+            opacity: 1;
+            transition: opacity 0.5s;
+        }
+
+        .start-btn {
+            pointer-events: all; 
+            font-weight: 700;
+            border-radius: 0.75rem;
+            padding: 0.75rem 1.5rem;
+            transition: all 0.2s;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        }
+
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center">
+
+    <div class="absolute top-4 w-full flex justify-around p-4 text-white z-30">
+        <h1 class="text-2xl font-black text-blue-400 text-center">Precision Timing Challenge</h1>
+        <div class="text-right">
+            <p class="text-sm text-gray-400 font-bold uppercase tracking-wider">STREAK: <span id="current-level" class="text-2xl text-blue-400 font-mono">0</span></p>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-overlay" class="ui-overlay text-white">
+        <h2 id="main-message" class="text-4xl font-extrabold mb-4">Click When Green</h2>
+        <p id="sub-message" class="text-lg text-gray-300 mb-6">
+            Tap the screen when the spinning line hits the green zone. Achieve a **streak of 10** to win!
+        </p>
+        
+        <div class="space-y-4">
+            <button id="start-btn" class="start-btn bg-blue-600 text-white text-lg hover:bg-blue-700">
+                Start Challenge
+            </button>
+        </div>
+    </div>
+
+<script>
+    // --- GAME CONSTANTS (ADJUSTED FOR HIGHER DIFFICULTY) ---
+    const INITIAL_TARGET_SIZE = Math.PI / 4; // 45 degrees
+    const INITIAL_SPIN_SPEED = 0.05; // Radians per frame
+    const TARGET_CENTER_ANGLE = 3 * Math.PI / 2; // 12 o'clock in Canvas coordinates. 
+    const WINNING_STREAK = 10; // New Goal
+
+    // --- DIFFICULTY INCREMENTS (THESE ARE THE ADJUSTED VALUES) ---
+    const TARGET_SIZE_DECREMENT = 0.05; // INCREASED: Target shrinks more each time
+    const SPEED_INCREMENT = 0.0075; // INCREASED: Speed increases more each time
+
+    // --- DOM ELEMENTS & CANVAS SETUP ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const startButton = document.getElementById('start-btn');
+    const uiOverlay = document.getElementById('ui-overlay');
+    const mainMessage = document.getElementById('main-message');
+    const subMessage = document.getElementById('sub-message');
+    const currentLevelDisplay = document.getElementById('current-level');
+
+    let animationFrameId;
+    let centerX, centerY, radius;
+    let isGameRunning = false;
+    
+    // --- GAME STATE ---
+    let spinnerAngle = TARGET_CENTER_ANGLE; 
+    let spinSpeed = INITIAL_SPIN_SPEED;
+    let targetSize = INITIAL_TARGET_SIZE;
+    let level = 0; // Represents the current successful streak
+
+    // --- UTILITY FUNCTIONS ---
+    
+    // Function to ensure the canvas is square and responsive
+    function resizeCanvas() {
+        const size = Math.min(window.innerWidth * 0.8, window.innerHeight * 0.8, 600);
+        canvas.width = size;
+        canvas.height = size;
+        centerX = size / 2;
+        centerY = size / 2;
+        
+        // Use Math.max(1, ...) to ensure the radius is never negative.
+        radius = Math.max(1, size / 2 - 20); // Radius leaves some padding (min 1px)
+    }
+
+    // Function to normalize angle to 0 to 2*PI
+    function normalizeAngle(angle) {
+        return (angle % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+    }
+
+    // --- DRAWING FUNCTIONS ---
+
+    function draw() {
+        // Clear canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Calculate target angles
+        const targetStart = TARGET_CENTER_ANGLE - targetSize / 2;
+        const targetEnd = TARGET_CENTER_ANGLE + targetSize / 2;
+        
+        // 1. Draw the main circle border
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#374151'; // Dark border
+        ctx.stroke();
+        
+        // 2. Draw the green target zone
+        ctx.beginPath();
+        // Start from center to draw pie slice
+        ctx.moveTo(centerX, centerY); 
+        ctx.arc(centerX, centerY, radius, targetStart, targetEnd);
+        ctx.closePath(); // Connect back to the center
+        ctx.fillStyle = '#10b981'; // Green target color
+        ctx.fill();
+
+        // 3. Draw the spinning line (Needle)
+        const lineLength = radius + 5; // Slightly longer than the radius
+        
+        const lineEndX = centerX + lineLength * Math.cos(spinnerAngle); 
+        const lineEndY = centerY + lineLength * Math.sin(spinnerAngle);
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(lineEndX, lineEndY);
+        ctx.lineWidth = 6;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#fcd34d'; // Yellow/Gold for the line
+        ctx.stroke();
+
+        // 4. Draw the center pivot
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, 8, 0, 2 * Math.PI);
+        ctx.fillStyle = '#1f2937'; // Match background
+        ctx.fill();
+        ctx.strokeStyle = '#fcd34d';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    // --- GAME LOOP ---
+
+    function animate() {
+        if (!isGameRunning) return;
+
+        // Update spinner angle
+        spinnerAngle += spinSpeed;
+        
+        // Keep angle within manageable range (0 to 2*PI)
+        spinnerAngle = normalizeAngle(spinnerAngle);
+
+        draw();
+
+        animationFrameId = requestAnimationFrame(animate);
+    }
+
+    // --- GAME LOGIC ---
+
+    function updateUI(message, sub, showButton = false) {
+        mainMessage.textContent = message;
+        subMessage.textContent = sub;
+        
+        if (showButton) {
+            uiOverlay.style.opacity = '1';
+            uiOverlay.style.pointerEvents = 'auto';
+            startButton.classList.remove('hidden');
+        } else {
+            uiOverlay.style.opacity = '0';
+            uiOverlay.style.pointerEvents = 'none';
+            startButton.classList.add('hidden');
+        }
+        currentLevelDisplay.textContent = level;
+    }
+
+    function gameWin() {
+        isGameRunning = false;
+        cancelAnimationFrame(animationFrameId);
+        
+        updateUI(
+            'CHALLENGE COMPLETE! 🏆', 
+            `You achieved a streak of ${WINNING_STREAK}! You are a master of precision.`, 
+            true
+        );
+        startButton.textContent = "Play Again";
+        startButton.classList.add('bg-green-600', 'hover:bg-green-700');
+        startButton.classList.remove('bg-red-600', 'hover:bg-red-700', 'bg-blue-600');
+    }
+
+    function startGame() {
+        if (isGameRunning) return;
+        
+        // Reset state for new challenge
+        level = 0; // Start streak at 0
+        spinSpeed = INITIAL_SPIN_SPEED;
+        targetSize = INITIAL_TARGET_SIZE;
+        spinnerAngle = TARGET_CENTER_ANGLE; 
+        isGameRunning = true;
+
+        startButton.classList.remove('bg-green-600', 'bg-red-600');
+        startButton.classList.add('bg-blue-600');
+        
+        updateUI('GO!', 'Tap to stop the line in the green zone.', false);
+        
+        // Start the animation loop
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+        }
+        animate();
+    }
+    
+    function levelUp() {
+        level++;
+        
+        if (level >= WINNING_STREAK) {
+            return gameWin();
+        }
+
+        // Increase difficulty: Speed up and shrink target
+        spinSpeed += SPEED_INCREMENT;
+        targetSize -= TARGET_SIZE_DECREMENT;
+        
+        // Ensure target doesn't become too small (e.g., min 0.05 rad)
+        if (targetSize < 0.05) {
+            targetSize = 0.05;
+        }
+
+        // Reset the spinner angle and restart
+        spinnerAngle = TARGET_CENTER_ANGLE;
+        
+        updateUI('SUCCESS!', `Streak: ${level}/${WINNING_STREAK}. Target size: ${(targetSize * 180 / Math.PI).toFixed(1)}°, Speed: ${spinSpeed.toFixed(3)}.`, false);
+        
+        // Restart spinning after a short pause
+        setTimeout(() => {
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            isGameRunning = true; // Re-enable game loop before calling animate()
+            animate();
+        }, 800); // Shortened pause for flow
+    }
+
+    function gameOver() {
+        isGameRunning = false;
+        cancelAnimationFrame(animationFrameId);
+        
+        const failedStreak = level;
+        level = 0; // Reset streak
+        
+        const finalMessage = failedStreak > 0 
+            ? `Your streak ended at ${failedStreak}/${WINNING_STREAK}.` 
+            : 'You failed the first attempt.';
+
+        updateUI(
+            'STREAK LOST ❌', 
+            `You missed the target! ${finalMessage}`, 
+            true
+        );
+        startButton.textContent = "Try Again";
+        startButton.classList.add('bg-red-600', 'hover:bg-red-700');
+        startButton.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'bg-green-600');
+    }
+
+    function handleGameClick() {
+        if (!isGameRunning) return;
+
+        // Stop the animation
+        cancelAnimationFrame(animationFrameId);
+        isGameRunning = false;
+        
+        // Calculate the angular boundaries of the target zone
+        const targetStart = TARGET_CENTER_ANGLE - targetSize / 2;
+        const targetEnd = TARGET_CENTER_ANGLE + targetSize / 2;
+        
+        const normalizedSpinner = spinnerAngle;
+
+        // Check for hit
+        if (normalizedSpinner >= targetStart && normalizedSpinner <= targetEnd) {
+            // HIT!
+            setTimeout(levelUp, 200);
+        } else {
+            // MISS!
+            setTimeout(gameOver, 200);
+        }
+    }
+
+    // --- INITIALIZATION ---
+
+    function init() {
+        // Setup event listeners
+        window.addEventListener('resize', resizeCanvas);
+        startButton.addEventListener('click', startGame);
+        canvas.addEventListener('click', handleGameClick);
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Prevent mobile scrolling/zooming
+            handleGameClick();
+        });
+
+        // Initial setup
+        resizeCanvas();
+        draw(); // Draw the initial static state
+        updateUI(
+            'Precision Timing Challenge', 
+            `Tap the screen when the spinning line hits the green zone. Achieve a **streak of ${WINNING_STREAK}** to win!`, 
+            true
+        );
+    }
+
+    document.addEventListener('DOMContentLoaded', init);
+</script>
+
+</body>
+</html>

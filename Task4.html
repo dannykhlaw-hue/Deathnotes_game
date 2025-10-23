@@ -3,354 +3,661 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Deathnotes-Precision Timing Challenge</title>
+    <title>Number Memory Challenge</title>
+    <!-- Load Tailwind CSS for utility classes -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Custom Font and Base Styles */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        /* Custom styles for the game board */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
         body {
             font-family: 'Inter', sans-serif;
             background-color: #0d1117; /* Dark background */
+        }
+        .game-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            grid-template-rows: repeat(5, 1fr);
+            gap: 8px;
+            max-width: 500px;
+            width: 100%;
+            aspect-ratio: 1 / 1; /* Keep it square */
+            margin: 0 auto;
+            padding: 10px;
+            border-radius: 1rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            background: linear-gradient(145deg, #161b22, #0d1117);
+        }
+        .tile {
             display: flex;
-            flex-direction: column; 
             justify-content: center;
             align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            user-select: none;
-            overflow: hidden;
-            touch-action: manipulation; /* Improves touch responsiveness */
-        }
-
-        #gameCanvas {
-            border-radius: 50%;
-            background-color: #1f2937; /* Dark Gray for the background of the circle area */
-            box-shadow: 0 0 50px rgba(255, 255, 255, 0.1), 0 0 20px rgba(0, 0, 0, 0.5) inset;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .ui-overlay {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            text-align: center;
-            padding: 1.5rem 2rem;
-            z-index: 30; 
-            pointer-events: none;
-            max-width: 90%;
-            background-color: rgba(0, 0, 0, 0.85); 
-            border-radius: 1rem;
-            box-shadow: 0 0 40px rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(5px);
-            opacity: 1;
-            transition: opacity 0.5s;
-        }
-
-        .start-btn {
-            pointer-events: all; 
+            font-size: 1.5rem;
             font-weight: 700;
-            border-radius: 0.75rem;
-            padding: 0.75rem 1.5rem;
-            transition: all 0.2s;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            background-color: #23272e;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            /* Default transitions (will be overridden in JS for fade duration) */
+            transition: transform 0.1s ease, background-color 0.2s, box-shadow 0.2s;
+            user-select: none;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
+            position: relative; /* For nested span */
+        }
+        
+        /* The span that holds the number, which will fade */
+        .number-content {
+            /* Opacity transition duration will be set dynamically in JS */
+            transition: opacity 2s ease-in-out; 
+            opacity: 0; /* Initially hidden */
+            color: #c9d1d9;
         }
 
-    </style>
-</head>
-<body class="flex flex-col items-center justify-center">
+        .tile:active {
+            transform: scale(0.95);
+        }
+        
+        /* State when numbers are shown for memorization */
+        .tile.active-number {
+            background-color: #30475e; /* Darker blue background */
+        }
+        .tile.active-number .number-content {
+            opacity: 1; /* Fully visible */
+            color: #ffffff;
+        }
 
-    <div class="absolute top-4 w-full flex justify-around p-4 text-white z-30">
-        <h1 class="text-2xl font-black text-blue-400 text-center">Precision Timing Challenge</h1>
-        <div class="text-right">
-            <p class="text-sm text-gray-400 font-bold uppercase tracking-wider">STREAK: <span id="current-level" class="text-2xl text-blue-400 font-mono">0</span></p>
+        /* State during the recall phase (after fading) - Opacity 0 for complete disappearance */
+        .tile.recall-phase .number-content {
+            opacity: 0; 
+            color: #c9d1d9;
+        }
+
+        /* State on correct click */
+        .tile.clicked-correctly {
+            background-color: #38a169; /* Green for correct */
+            box-shadow: 0 0 15px rgba(56, 161, 105, 0.8);
+        }
+        .tile.clicked-correctly .number-content {
+            opacity: 1; 
+            color: #0d1117; /* Dark text for contrast on green background */
+        }
+        
+        /* State on incorrect click */
+        .tile.clicked-incorrectly {
+            background-color: #e53e3e; /* Red for incorrect */
+            animation: shake 0.5s;
+        }
+        .tile.clicked-incorrectly .number-content {
+            opacity: 1; 
+            color: #ffffff;
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-5px); }
+            40%, 80% { transform: translateX(5px); }
+        }
+        .button {
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.4);
+        }
+        .button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+    <!-- Firebase Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, getDocs, collection, query, where, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables for Firebase access
+        window.db = null;
+        window.auth = null;
+        window.userId = null;
+        window.appId = null;
+
+        // Set Firestore log level to Debug
+        setLogLevel('Debug');
+
+        const initializeFirebase = async () => {
+            try {
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+                window.appId = appId;
+                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                
+                const app = initializeApp(firebaseConfig);
+                window.db = getFirestore(app);
+                window.auth = getAuth(app);
+
+                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+                const authPromise = new Promise((resolve) => {
+                    const unsubscribe = onAuthStateChanged(window.auth, async (user) => {
+                        unsubscribe(); // Stop listening after the first event
+                        if (user) {
+                            window.userId = user.uid;
+                        } else {
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(window.auth, initialAuthToken);
+                                window.userId = window.auth.currentUser.uid;
+                            } else {
+                                const anonymousUser = await signInAnonymously(window.auth);
+                                window.userId = anonymousUser.user.uid;
+                            }
+                        }
+                        console.log("Firebase Auth Ready. User ID:", window.userId);
+                        resolve();
+                    });
+                });
+
+                await authPromise;
+                window.checkHighestScore(); // Now safe to call after auth is ready
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+            }
+        };
+
+        // Expose function to global scope
+        window.initializeFirebase = initializeFirebase;
+
+    </script>
+</head>
+<body class="p-4 flex flex-col items-center min-h-screen">
+
+    <div class="text-center mb-6">
+        <h1 class="text-4xl font-bold text-blue-400 mb-2">Number Recall Challenge</h1>
+        <p id="status-message" class="text-xl text-gray-300">Prepare to begin!</p>
+        <div class="mt-4 flex flex-wrap justify-center gap-4">
+            <span id="level-display" class="px-4 py-2 bg-purple-600 rounded-full text-white font-semibold shadow-lg">Level: 0</span>
+            <span id="target-display" class="px-4 py-2 bg-yellow-600 rounded-full text-white font-semibold shadow-lg">Next: 1</span>
+            <span id="highest-score-display" class="px-4 py-2 bg-gray-700 rounded-full text-white font-semibold shadow-lg">Highest Level: 0</span>
+            <!-- New Recall Timer Display -->
+            <span id="recall-timer" class="px-4 py-2 bg-red-600 rounded-full text-white font-semibold shadow-lg hidden">Time: 10.0s</span>
         </div>
     </div>
 
-    <canvas id="gameCanvas"></canvas>
+    <div id="game-container" class="game-grid mb-6">
+        <!-- Tiles will be dynamically generated here -->
+    </div>
 
-    <div id="ui-overlay" class="ui-overlay text-white">
-        <h2 id="main-message" class="text-4xl font-extrabold mb-4">Click When Green</h2>
-        <p id="sub-message" class="text-lg text-gray-300 mb-6">
-            Tap the screen when the spinning line hits the green zone. Achieve a **streak of 10** to win!
-        </p>
-        
-        <div class="space-y-4">
-            <button id="start-btn" class="start-btn bg-blue-600 text-white text-lg hover:bg-blue-700">
-                Start Challenge
+    <button id="start-button" onclick="startGame()" class="button bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full text-lg">
+        Start Game
+    </button>
+    
+    <!-- Game Over/Message Modal (Only used for Game Over and Final Win) -->
+    <div id="game-modal" class="hidden fixed inset-0 bg-black bg-opacity-80 flex justify-center items-center z-50 p-4" onclick="hideModal()">
+        <div class="bg-gray-800 p-8 rounded-xl shadow-2xl text-center max-w-sm w-full" onclick="event.stopPropagation()">
+            <h2 id="modal-title" class="text-3xl font-bold mb-4 text-white"></h2>
+            <p id="modal-message" class="text-gray-300 mb-6"></p>
+            <button id="modal-action-button" class="button bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-full">
+                Action Button
             </button>
         </div>
     </div>
 
-<script>
-    // --- GAME CONSTANTS (ADJUSTED FOR HIGHER DIFFICULTY) ---
-    const INITIAL_TARGET_SIZE = Math.PI / 4; // 45 degrees
-    const INITIAL_SPIN_SPEED = 0.05; // Radians per frame
-    const TARGET_CENTER_ANGLE = 3 * Math.PI / 2; // 12 o'clock in Canvas coordinates. 
-    const WINNING_STREAK = 10; // New Goal
-
-    // --- DIFFICULTY INCREMENTS (THESE ARE THE ADJUSTED VALUES) ---
-    const TARGET_SIZE_DECREMENT = 0.05; // INCREASED: Target shrinks more each time
-    const SPEED_INCREMENT = 0.0075; // INCREASED: Speed increases more each time
-
-    // --- DOM ELEMENTS & CANVAS SETUP ---
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    const startButton = document.getElementById('start-btn');
-    const uiOverlay = document.getElementById('ui-overlay');
-    const mainMessage = document.getElementById('main-message');
-    const subMessage = document.getElementById('sub-message');
-    const currentLevelDisplay = document.getElementById('current-level');
-
-    let animationFrameId;
-    let centerX, centerY, radius;
-    let isGameRunning = false;
-    
-    // --- GAME STATE ---
-    let spinnerAngle = TARGET_CENTER_ANGLE; 
-    let spinSpeed = INITIAL_SPIN_SPEED;
-    let targetSize = INITIAL_TARGET_SIZE;
-    let level = 0; // Represents the current successful streak
-
-    // --- UTILITY FUNCTIONS ---
-    
-    // Function to ensure the canvas is square and responsive
-    function resizeCanvas() {
-        const size = Math.min(window.innerWidth * 0.8, window.innerHeight * 0.8, 600);
-        canvas.width = size;
-        canvas.height = size;
-        centerX = size / 2;
-        centerY = size / 2;
+    <script>
+        // --- Game Constants ---
+        const GRID_SIZE = 25; // 5x5 grid
+        const MAX_NUMBER = 25;
+        const RECALL_TIME_LIMIT_SECONDS = 10; 
         
-        // Use Math.max(1, ...) to ensure the radius is never negative.
-        radius = Math.max(1, size / 2 - 20); // Radius leaves some padding (min 1px)
-    }
-
-    // Function to normalize angle to 0 to 2*PI
-    function normalizeAngle(angle) {
-        return (angle % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
-    }
-
-    // --- DRAWING FUNCTIONS ---
-
-    function draw() {
-        // Clear canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Calculate target angles
-        const targetStart = TARGET_CENTER_ANGLE - targetSize / 2;
-        const targetEnd = TARGET_CENTER_ANGLE + targetSize / 2;
+        // Progression
+        const WIN_GOAL_LEVEL = 10; 
         
-        // 1. Draw the main circle border
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-        ctx.lineWidth = 4;
-        ctx.strokeStyle = '#374151'; // Dark border
-        ctx.stroke();
+        // Fixed Speed Settings (Time Decrement is 0, so speed is constant)
+        const INITIAL_FADE_DURATION_MS = 800; 
+        const INITIAL_MEMORIZATION_TIME_MS = 1200; 
+        const TIME_DECREMENT_PER_LEVEL_MS = 0; 
+        const MIN_MEMORIZATION_TIME_MS = 500; 
+        const MIN_FADE_DURATION_MS = 300; 
         
-        // 2. Draw the green target zone
-        ctx.beginPath();
-        // Start from center to draw pie slice
-        ctx.moveTo(centerX, centerY); 
-        ctx.arc(centerX, centerY, radius, targetStart, targetEnd);
-        ctx.closePath(); // Connect back to the center
-        ctx.fillStyle = '#10b981'; // Green target color
-        ctx.fill();
-
-        // 3. Draw the spinning line (Needle)
-        const lineLength = radius + 5; // Slightly longer than the radius
+        // Dynamic time variables (will be updated in startGame)
+        let FADE_DURATION_MS = INITIAL_FADE_DURATION_MS;
+        let MEMORIZATION_TIME_MS = INITIAL_MEMORIZATION_TIME_MS;
         
-        const lineEndX = centerX + lineLength * Math.cos(spinnerAngle); 
-        const lineEndY = centerY + lineLength * Math.sin(spinnerAngle);
+        // --- Game State ---
+        let state = {
+            level: 0,
+            currentNumberCount: 0,
+            targetNumber: 1,
+            isRecallPhase: false,
+            numbersOnGrid: [], 
+            numberPositions: new Map(), 
+            highestLevel: 0,
+            isGameRunning: false
+        };
 
-        ctx.beginPath();
-        ctx.moveTo(centerX, centerY);
-        ctx.lineTo(lineEndX, lineEndY);
-        ctx.lineWidth = 6;
-        ctx.lineCap = 'round';
-        ctx.strokeStyle = '#fcd34d'; // Yellow/Gold for the line
-        ctx.stroke();
+        // --- Timer State ---
+        let recallTimerId = null;
 
-        // 4. Draw the center pivot
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, 8, 0, 2 * Math.PI);
-        ctx.fillStyle = '#1f2937'; // Match background
-        ctx.fill();
-        ctx.strokeStyle = '#fcd34d';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-    }
+        // --- DOM Elements ---
+        const gameContainer = document.getElementById('game-container');
+        const startButton = document.getElementById('start-button');
+        const statusMessage = document.getElementById('status-message');
+        const levelDisplay = document.getElementById('level-display');
+        const targetDisplay = document.getElementById('target-display');
+        const highestScoreDisplay = document.getElementById('highest-score-display');
+        const gameModal = document.getElementById('game-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+        const modalActionButton = document.getElementById('modal-action-button'); 
+        const recallTimerDisplay = document.getElementById('recall-timer');
 
-    // --- GAME LOOP ---
+        // --- Firebase/Data Functions ---
 
-    function animate() {
-        if (!isGameRunning) return;
+        window.saveHighestScore = async () => {
+            if (!window.db || !window.userId || !window.appId || state.level <= state.highestLevel) return;
 
-        // Update spinner angle
-        spinnerAngle += spinSpeed;
-        
-        // Keep angle within manageable range (0 to 2*PI)
-        spinnerAngle = normalizeAngle(spinnerAngle);
+            try {
+                const docRef = doc(window.db, `artifacts/${window.appId}/users/${window.userId}/memory_game_scores`, 'high_score');
+                await setDoc(docRef, { 
+                    highestLevel: state.level,
+                    timestamp: new Date() 
+                }, { merge: true });
 
-        draw();
-
-        animationFrameId = requestAnimationFrame(animate);
-    }
-
-    // --- GAME LOGIC ---
-
-    function updateUI(message, sub, showButton = false) {
-        mainMessage.textContent = message;
-        subMessage.textContent = sub;
-        
-        if (showButton) {
-            uiOverlay.style.opacity = '1';
-            uiOverlay.style.pointerEvents = 'auto';
-            startButton.classList.remove('hidden');
-        } else {
-            uiOverlay.style.opacity = '0';
-            uiOverlay.style.pointerEvents = 'none';
-            startButton.classList.add('hidden');
-        }
-        currentLevelDisplay.textContent = level;
-    }
-
-    function gameWin() {
-        isGameRunning = false;
-        cancelAnimationFrame(animationFrameId);
-        
-        updateUI(
-            'CHALLENGE COMPLETE! 🏆', 
-            `You achieved a streak of ${WINNING_STREAK}! You are a master of precision.`, 
-            true
-        );
-        startButton.textContent = "Play Again";
-        startButton.classList.add('bg-green-600', 'hover:bg-green-700');
-        startButton.classList.remove('bg-red-600', 'hover:bg-red-700', 'bg-blue-600');
-    }
-
-    function startGame() {
-        if (isGameRunning) return;
-        
-        // Reset state for new challenge
-        level = 0; // Start streak at 0
-        spinSpeed = INITIAL_SPIN_SPEED;
-        targetSize = INITIAL_TARGET_SIZE;
-        spinnerAngle = TARGET_CENTER_ANGLE; 
-        isGameRunning = true;
-
-        startButton.classList.remove('bg-green-600', 'bg-red-600');
-        startButton.classList.add('bg-blue-600');
-        
-        updateUI('GO!', 'Tap to stop the line in the green zone.', false);
-        
-        // Start the animation loop
-        if (animationFrameId) {
-            cancelAnimationFrame(animationFrameId);
-        }
-        animate();
-    }
-    
-    function levelUp() {
-        level++;
-        
-        if (level >= WINNING_STREAK) {
-            return gameWin();
-        }
-
-        // Increase difficulty: Speed up and shrink target
-        spinSpeed += SPEED_INCREMENT;
-        targetSize -= TARGET_SIZE_DECREMENT;
-        
-        // Ensure target doesn't become too small (e.g., min 0.05 rad)
-        if (targetSize < 0.05) {
-            targetSize = 0.05;
-        }
-
-        // Reset the spinner angle and restart
-        spinnerAngle = TARGET_CENTER_ANGLE;
-        
-        updateUI('SUCCESS!', `Streak: ${level}/${WINNING_STREAK}. Target size: ${(targetSize * 180 / Math.PI).toFixed(1)}°, Speed: ${spinSpeed.toFixed(3)}.`, false);
-        
-        // Restart spinning after a short pause
-        setTimeout(() => {
-            if (animationFrameId) {
-                cancelAnimationFrame(animationFrameId);
+                state.highestLevel = state.level;
+                updateUI();
+            } catch (error) {
+                console.error("Error saving high score:", error);
             }
-            isGameRunning = true; // Re-enable game loop before calling animate()
-            animate();
-        }, 800); // Shortened pause for flow
-    }
+        };
 
-    function gameOver() {
-        isGameRunning = false;
-        cancelAnimationFrame(animationFrameId);
-        
-        const failedStreak = level;
-        level = 0; // Reset streak
-        
-        const finalMessage = failedStreak > 0 
-            ? `Your streak ended at ${failedStreak}/${WINNING_STREAK}.` 
-            : 'You failed the first attempt.';
+        window.checkHighestScore = async () => {
+            if (!window.db || !window.userId || !window.appId) return;
 
-        updateUI(
-            'STREAK LOST ❌', 
-            `You missed the target! ${finalMessage}`, 
-            true
-        );
-        startButton.textContent = "Try Again";
-        startButton.classList.add('bg-red-600', 'hover:bg-red-700');
-        startButton.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'bg-green-600');
-    }
+            try {
+                const docRef = doc(window.db, `artifacts/${window.appId}/users/${window.userId}/memory_game_scores`, 'high_score');
+                const docSnap = await getDoc(docRef);
 
-    function handleGameClick() {
-        if (!isGameRunning) return;
+                if (docSnap.exists()) {
+                    state.highestLevel = docSnap.data().highestLevel || 0;
+                    updateUI();
+                }
+            } catch (error) {
+                console.error("Error checking high score:", error);
+            }
+        };
 
-        // Stop the animation
-        cancelAnimationFrame(animationFrameId);
-        isGameRunning = false;
-        
-        // Calculate the angular boundaries of the target zone
-        const targetStart = TARGET_CENTER_ANGLE - targetSize / 2;
-        const targetEnd = TARGET_CENTER_ANGLE + targetSize / 2;
-        
-        const normalizedSpinner = spinnerAngle;
 
-        // Check for hit
-        if (normalizedSpinner >= targetStart && normalizedSpinner <= targetEnd) {
-            // HIT!
-            setTimeout(levelUp, 200);
-        } else {
-            // MISS!
-            setTimeout(gameOver, 200);
-        }
-    }
+        // --- Utility Functions ---
 
-    // --- INITIALIZATION ---
+        /**
+         * Generates unique random positions for the numbers.
+         */
+        const generateNumberPositions = (count) => {
+            const positions = new Set();
+            while (positions.size < count) {
+                positions.add(Math.floor(Math.random() * GRID_SIZE));
+            }
+            
+            const newNumbersOnGrid = [];
+            const newNumberPositions = new Map();
+            let i = 1;
+            for (const pos of positions) {
+                newNumbersOnGrid.push({ positionIndex: pos, numberValue: i });
+                newNumberPositions.set(i, pos);
+                i++;
+            }
+            state.numbersOnGrid = newNumbersOnGrid;
+            state.numberPositions = newNumberPositions;
+        };
 
-    function init() {
-        // Setup event listeners
-        window.addEventListener('resize', resizeCanvas);
-        startButton.addEventListener('click', startGame);
-        canvas.addEventListener('click', handleGameClick);
-        canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault(); // Prevent mobile scrolling/zooming
-            handleGameClick();
-        });
+        /**
+         * Renders the game grid (5x5 tiles), creating a nested span for the number content.
+         */
+        const renderGameGrid = () => {
+            gameContainer.innerHTML = '';
+            for (let i = 0; i < GRID_SIZE; i++) {
+                const tile = document.createElement('div');
+                tile.id = `tile-${i}`;
+                tile.className = 'tile';
+                tile.dataset.index = i;
+                tile.onclick = handleTileClick;
+                
+                // Add a span for the number content which will handle the fading opacity
+                const numberSpan = document.createElement('span');
+                numberSpan.className = 'number-content';
+                numberSpan.id = `num-span-${i}`;
+                tile.appendChild(numberSpan);
 
-        // Initial setup
-        resizeCanvas();
-        draw(); // Draw the initial static state
-        updateUI(
-            'Precision Timing Challenge', 
-            `Tap the screen when the spinning line hits the green zone. Achieve a **streak of ${WINNING_STREAK}** to win!`, 
-            true
-        );
-    }
+                gameContainer.appendChild(tile);
+            }
+        };
 
-    document.addEventListener('DOMContentLoaded', init);
-</script>
+        /**
+         * Updates the display elements.
+         */
+        const updateUI = () => {
+            levelDisplay.textContent = `Level: ${state.level}`;
+            targetDisplay.textContent = `Next: ${state.targetNumber}`;
+            highestScoreDisplay.textContent = `Highest Level: ${state.highestLevel}`;
+            startButton.disabled = state.isGameRunning;
+            startButton.textContent = state.isGameRunning ? 'In Progress...' : 'Start Game';
+        };
 
+        /**
+         * Hides the game modal.
+         */
+        const hideModal = () => {
+            gameModal.classList.add('hidden');
+        };
+
+        /**
+         * Shows the game over or level complete modal with a dynamic button.
+         * @param {string} title - The title of the modal.
+         * @param {string} message - The message body.
+         * @param {string} buttonText - The text for the action button.
+         * @param {function} actionFunction - The function to call when the button is clicked.
+         */
+        const showModal = (title, message, buttonText, actionFunction) => {
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            modalActionButton.textContent = buttonText;
+            
+            // Remove previous onclick handler
+            modalActionButton.onclick = null;
+            
+            // Set new handler that hides the modal and then performs the action
+            modalActionButton.onclick = () => {
+                hideModal();
+                actionFunction();
+            };
+
+            gameModal.classList.remove('hidden');
+        };
+
+        /**
+         * Resets the game state and UI to start fresh.
+         */
+        const resetGame = () => {
+            clearRecallTimer();
+            state.level = 0;
+            state.currentNumberCount = 0;
+            state.targetNumber = 1;
+            state.isRecallPhase = false;
+            state.numbersOnGrid = [];
+            state.numberPositions = new Map();
+            state.isGameRunning = false;
+            statusMessage.textContent = 'Ready to start the challenge!';
+            
+            // Reset tile appearances
+            document.querySelectorAll('.tile').forEach(tile => {
+                const numberSpan = tile.querySelector('.number-content');
+                // Reset custom transition
+                tile.style.transition = '';
+                numberSpan.style.transition = '';
+                
+                tile.className = 'tile';
+                numberSpan.textContent = '';
+                tile.onclick = handleTileClick; 
+            });
+
+            updateUI();
+        };
+
+        // --- Timer Functions ---
+
+        const clearRecallTimer = () => {
+            if (recallTimerId) {
+                clearInterval(recallTimerId);
+                recallTimerId = null;
+            }
+            recallTimerDisplay.classList.add('hidden');
+        };
+
+        const handleTimeOut = () => {
+             // If a timeout occurs, and we are still in recall phase, it's game over
+            if (state.isRecallPhase) {
+                state.isRecallPhase = false;
+                state.isGameRunning = false;
+                
+                // Show where the correct number was (same as incorrect click)
+                const correctPosition = state.numberPositions.get(state.targetNumber);
+                const correctTile = document.getElementById(`tile-${correctPosition}`);
+                if (correctTile) {
+                    correctTile.classList.remove('recall-phase');
+                    correctTile.classList.add('clicked-incorrectly');
+                    correctTile.querySelector('.number-content').textContent = state.targetNumber;
+                }
+
+                statusMessage.textContent = `TIME OUT! Level ${state.level} Failed.`;
+                
+                // Game Over Modal Action: Start Level 1 again
+                showModal(
+                    'TIME OUT!', 
+                    `You ran out of time to find number ${state.targetNumber}. You reached Level ${state.level}.`,
+                    'Play Again',
+                    () => { resetGame(); startGame(); } // Reset then start fresh
+                );
+            }
+        };
+
+        const startRecallTimer = () => {
+            clearRecallTimer(); // Clear any existing timer
+            
+            let timeRemaining = RECALL_TIME_LIMIT_SECONDS;
+            recallTimerDisplay.textContent = `Time: ${timeRemaining.toFixed(1)}s`;
+            recallTimerDisplay.classList.remove('hidden', 'bg-red-800');
+            recallTimerDisplay.classList.add('bg-red-600');
+
+            // The clock starts counting down
+            recallTimerId = setInterval(() => {
+                // Use 100ms interval for smoother display
+                timeRemaining -= 0.1; 
+                
+                if (timeRemaining <= 0) {
+                    clearRecallTimer();
+                    handleTimeOut();
+                } else {
+                    recallTimerDisplay.textContent = `Time: ${Math.max(0, timeRemaining).toFixed(1)}s`;
+                    if (timeRemaining <= 3) {
+                        recallTimerDisplay.classList.remove('bg-red-600');
+                        recallTimerDisplay.classList.add('bg-red-800'); // More urgent color
+                    }
+                }
+            }, 100); // Update every 100ms for smooth countdown
+        };
+
+        // --- Game Phases ---
+
+        /**
+         * Starts the game or moves to the next level.
+         */
+        const startGame = () => {
+            // Check state.isGameRunning is false to ensure we don't double-start.
+            // When transitioning between levels, we set state.isGameRunning to false before calling startGame.
+            if (state.isGameRunning) return; 
+            clearRecallTimer();
+
+            state.isGameRunning = true;
+            state.level++;
+            
+            // 1. Calculate number count: Start at 1, increase by 1 each level.
+            state.currentNumberCount = Math.min(MAX_NUMBER, state.level);
+            state.targetNumber = 1;
+
+            // 2. Adjust Hardness (Time Reduction)
+            const levelFactor = state.level - 1;
+            const timeReduction = levelFactor * TIME_DECREMENT_PER_LEVEL_MS;
+            
+            // These remain constant since TIME_DECREMENT_PER_LEVEL_MS is 0
+            MEMORIZATION_TIME_MS = Math.max(MIN_MEMORIZATION_TIME_MS, INITIAL_MEMORIZATION_TIME_MS - timeReduction);
+            FADE_DURATION_MS = Math.max(MIN_FADE_DURATION_MS, INITIAL_FADE_DURATION_MS - timeReduction);
+
+
+            // 3. Update UI and start
+            const numberText = state.currentNumberCount > 1 ? 'numbers' : 'number';
+            // Show the user the fixed memorization time in the status message
+            statusMessage.textContent = `Level ${state.level}: Memorize ${state.currentNumberCount} ${numberText} in ${(MEMORIZATION_TIME_MS + FADE_DURATION_MS)/1000} seconds!`;
+            updateUI();
+
+            // Ensure we don't try to generate 0 numbers if level somehow reset oddly
+            if (state.currentNumberCount > 0) {
+                generateNumberPositions(state.currentNumberCount);
+                startMemorizationPhase();
+            } else {
+                // Should only happen if level is 0, which is handled by state.level++
+                console.error("Attempted to start game with 0 numbers.");
+                resetGame();
+            }
+        };
+
+        /**
+         * Displays numbers for memorization and sets the fade timer.
+         */
+        const startMemorizationPhase = () => {
+            state.isRecallPhase = false;
+            const transitionDurationStyle = `${FADE_DURATION_MS}ms`;
+
+            // Clear all previous markings and content
+            document.querySelectorAll('.tile').forEach(tile => {
+                const numberSpan = tile.querySelector('.number-content');
+                tile.className = 'tile';
+                numberSpan.textContent = '';
+                
+                // Re-enable click handler for ALL tiles for the new round
+                tile.onclick = handleTileClick; 
+                
+                // Set the transition duration on both elements for simultaneous fade
+                tile.style.transition = `transform 0.1s ease, background-color ${transitionDurationStyle} ease-in-out, box-shadow 0.2s`;
+                numberSpan.style.transition = `opacity ${transitionDurationStyle} ease-in-out, color 0.2s`; 
+            });
+
+            // Display current numbers
+            state.numbersOnGrid.forEach(item => {
+                const tile = document.getElementById(`tile-${item.positionIndex}`);
+                if (tile) {
+                    const numberSpan = tile.querySelector('.number-content');
+                    numberSpan.textContent = item.numberValue;
+                    tile.classList.add('active-number');
+                }
+            });
+
+            // Timer 1: End of Memorization Time -> Start Fade
+            setTimeout(() => {
+                // FADE START: This triggers the background color and number opacity transition
+                document.querySelectorAll('.tile.active-number').forEach(tile => {
+                    tile.classList.remove('active-number');
+                    tile.classList.add('recall-phase');
+                });
+            }, MEMORIZATION_TIME_MS);
+
+            // Timer 2: End of Fade Time -> Start Recall Phase (and start the timer)
+            setTimeout(startRecallPhase, MEMORIZATION_TIME_MS + FADE_DURATION_MS);
+        };
+
+        /**
+         * Begins the recall phase where the user clicks the numbers in order.
+         * The recall timer is started here, after the fade has completed.
+         */
+        const startRecallPhase = () => {
+            state.isRecallPhase = true;
+            statusMessage.textContent = `Recall Phase: Click ${state.targetNumber} next.`;
+            updateUI();
+            
+            // Start the 10-second timer now that the numbers are fully invisible
+            startRecallTimer();
+        };
+
+        /**
+         * Handles the user clicking a tile during the recall phase.
+         */
+        const handleTileClick = (event) => {
+            if (!state.isRecallPhase) return;
+
+            const clickedTile = event.currentTarget;
+            const clickedIndex = parseInt(clickedTile.dataset.index);
+
+            // Check if the clicked location matches the target number's position
+            const correctPosition = state.numberPositions.get(state.targetNumber);
+            const clickedNumberSpan = clickedTile.querySelector('.number-content');
+
+            if (clickedIndex === correctPosition) {
+                // CORRECT CLICK
+                clickedTile.classList.remove('recall-phase');
+                clickedTile.classList.add('clicked-correctly');
+                clickedNumberSpan.textContent = state.targetNumber; // Ensure number is visible again
+                clickedTile.onclick = null; // Disable further clicks on this tile
+
+                state.targetNumber++;
+
+                if (state.targetNumber > state.currentNumberCount) {
+                    // LEVEL WON
+                    clearRecallTimer();
+                    state.isRecallPhase = false;
+                    state.isGameRunning = false;
+                    window.saveHighestScore();
+
+                    // Check if the current level is the final challenge level
+                    if (state.level >= WIN_GOAL_LEVEL) {
+                        // VICTORY ACHIEVED (GOAL MET)
+                        statusMessage.textContent = `CHALLENGE COMPLETE! You beat the game!`;
+                        showModal(
+                            'CHALLENGE COMPLETE!', 
+                            `You successfully completed the ${WIN_GOAL_LEVEL}-number challenge!`,
+                            'Start New Game',
+                            resetGame 
+                        );
+                    } 
+                    else { 
+                        // INSTANT TRANSITION TO NEXT LEVEL (with a tiny visual delay)
+                        statusMessage.textContent = `LEVEL ${state.level} COMPLETE! Starting next round...`;
+                        
+                        // Use a small delay (500ms) to ensure the "COMPLETE!" message is visible before the grid refreshes.
+                        setTimeout(() => {
+                            // state.isGameRunning is already false, so startGame will proceed.
+                            startGame();
+                        }, 500); 
+                    }
+                } else {
+                    // Continue to next number - Reset the timer!
+                    startRecallTimer();
+                    statusMessage.textContent = `Correct! Now click ${state.targetNumber}.`;
+                    updateUI();
+                }
+
+            } else {
+                // INCORRECT CLICK - GAME OVER
+                clearRecallTimer();
+                state.isRecallPhase = false;
+                state.isGameRunning = false;
+                
+                // Show where the correct number was
+                const correctPosition = state.numberPositions.get(state.targetNumber);
+                const correctTile = document.getElementById(`tile-${correctPosition}`);
+                if (correctTile) {
+                    correctTile.classList.remove('recall-phase');
+                    correctTile.classList.add('clicked-incorrectly');
+                    correctTile.querySelector('.number-content').textContent = state.targetNumber;
+                }
+                
+                // Mark the incorrect click
+                clickedTile.classList.add('clicked-incorrectly');
+
+                statusMessage.textContent = `GAME OVER! Level ${state.level} Failed.`;
+                
+                // Game Over Modal Action: Start Level 1 again
+                showModal(
+                    'GAME OVER!', 
+                    `You failed to find number ${state.targetNumber}. You reached Level ${state.level}.`,
+                    'Play Again',
+                    () => { resetGame(); startGame(); } // Reset state then immediately call startGame
+                );
+            }
+        };
+
+        // --- Initialization ---
+
+        window.onload = () => {
+            renderGameGrid();
+            resetGame();
+            window.initializeFirebase(); // Initialize Firebase on load
+        };
+    </script>
 </body>
 </html>

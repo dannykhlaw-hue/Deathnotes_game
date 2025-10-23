@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deathnotes-Task 2: Reaction Time Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom Font and Base Styles */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117; /* Dark GitHub-like background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            user-select: none;
+            overflow: hidden;
+            transition: background-color 0.4s ease-out; /* Smooth transition for color changes */
+        }
+        
+        /* Main Container for the Game Area */
+        .container {
+            width: 100%;
+            height: 100vh;
+            cursor: pointer; /* Default cursor for click-to-start */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            z-index: 10;
+        }
+
+        /* --- Game State Colors --- */
+        .state-wait { background-color: #ef4444; } /* Red */
+        .state-ready { background-color: #10b981; } /* Green */
+        .state-early { background-color: #3b82f6; } /* Blue/Penalty */
+        .state-result { background-color: #0d1117; } /* Dark Blue/Idle */
+
+        /* --- Text and UI --- */
+        .main-text {
+            font-size: clamp(2.5rem, 10vw, 6rem);
+            font-weight: 900;
+            text-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+            line-height: 1;
+        }
+        .sub-text {
+            font-size: clamp(1rem, 4vw, 1.5rem);
+            font-weight: 700;
+            color: #94a3b8; /* Slate gray */
+        }
+        
+        /* Fade-in animation for result text */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        /* Styling for the central content block */
+        .content-block {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            max-width: 90%;
+        }
+
+        /* Button Styling */
+        .game-btn {
+            font-weight: 700;
+            border-radius: 0.75rem;
+            padding: 0.75rem 1.5rem;
+            transition: all 0.2s;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+        }
+        .game-btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        .game-btn:active {
+            box-shadow: none;
+            transform: translateY(1px);
+        }
+
+    </style>
+</head>
+<body>
+
+<div id="game-container" class="container state-result">
+    
+    <!-- Scoreboard (Top Right) -->
+    <div id="score-display" class="absolute top-4 right-4 p-3 rounded-xl bg-gray-800/80 border border-indigo-500 text-white shadow-xl text-right z-20">
+        <h3 class="text-xs font-bold mb-1 text-indigo-300 uppercase tracking-wider">Goal: <span class="text-white font-mono">330ms AVG</span></h3>
+        <div class="text-sm text-gray-400">Total Win: <span id="total-wins" class="font-black text-xl text-yellow-400">0</span></div>
+    </div>
+    
+    <!-- Central Content Area -->
+    <div id="content-area" class="content-block text-white">
+        <h1 id="main-text" class="main-text mb-4 animate-fade-in">
+            Click to Start
+        </h1>
+        <p id="sub-text" class="sub-text">
+            Get an average reaction time under 330ms across 5 tries.
+        </p>
+
+        <!-- Buttons Container (Hidden by default) -->
+        <div id="buttons-container" class="mt-8 space-y-4 max-w-sm mx-auto">
+            <!-- New Round Button -->
+            <button id="start-round-btn"
+                    class="game-btn w-full bg-indigo-600 text-white text-lg hidden">
+                Start Next Round
+            </button>
+            
+            <!-- Reset Championship Button (Hidden by default) -->
+            <button id="reset-championship-btn"
+                    class="game-btn w-full bg-gray-600 text-sm text-gray-200 hidden">
+                Reset Total Wins
+            </button>
+        </div>
+        
+        <!-- Attempt Tracker -->
+        <div id="attempt-tracker" class="mt-8 p-4 rounded-xl bg-gray-800/70 shadow-2xl hidden max-w-sm mx-auto">
+            <h3 class="text-lg font-bold mb-2 text-indigo-300">
+                Attempts (Avg: <span id="current-avg" class="text-white font-mono">N/A</span>)
+            </h3>
+            <ul id="times-list" class="space-y-1 text-base text-left text-gray-300 w-full">
+                <!-- Times will be listed here -->
+            </ul>
+        </div>
+        
+    </div>
+    
+</div>
+
+<script>
+    // --- GAME CONSTANTS ---
+    const MIN_WAIT = 1000; // Minimum wait time in ms (1 second)
+    const MAX_WAIT = 3000; // Maximum wait time in ms (3 seconds)
+    const TARGET_AVG = 330; // Milliseconds (UPDATED to 330)
+    const MAX_TRIES = 5; // Total attempts per round (fixed at 5)
+    
+    // --- DOM ELEMENTS ---
+    const container = document.getElementById('game-container');
+    const mainText = document.getElementById('main-text');
+    const subText = document.getElementById('sub-text');
+    const attemptTracker = document.getElementById('attempt-tracker');
+    const currentAvgDisplay = document.getElementById('current-avg');
+    const timesList = document.getElementById('times-list');
+    const totalWinsDisplay = document.getElementById('total-wins'); // Renamed ID
+    const startRoundButton = document.getElementById('start-round-btn');
+    const resetChampionshipButton = document.getElementById('reset-championship-btn'); // Renamed ID
+
+    // --- GAME STATE ---
+    let gameState = 'ready'; // 'ready', 'waiting', 'go', 'early', 'result'
+    let startTime = 0;
+    let timerId = null;
+    let reactionTimes = [];
+    let totalWins = 0; // Renamed variable
+    
+    // --- HELPER FUNCTIONS ---
+
+    function calculateAverage() {
+        if (reactionTimes.length === 0) return 0;
+        const sum = reactionTimes.reduce((a, b) => a + b, 0);
+        return Math.round(sum / reactionTimes.length);
+    }
+    
+    function updateUI() {
+        // 1. Reset Classes and Cursor
+        container.className = 'container'; // Reset all state classes
+        container.style.cursor = 'default';
+        mainText.classList.remove('animate-fade-in');
+
+        // 2. Button Visibility Control
+        startRoundButton.classList.add('hidden');
+        resetChampionshipButton.classList.add('hidden');
+        
+        if (totalWins > 0) {
+            resetChampionshipButton.classList.remove('hidden');
+        }
+
+        // 3. State-specific updates
+        switch (gameState) {
+            case 'ready':
+                container.classList.add('state-result');
+                mainText.textContent = "Click to Start";
+                subText.textContent = `Get an average below ${TARGET_AVG}ms over ${MAX_TRIES} tries.`;
+                attemptTracker.classList.add('hidden');
+                container.style.cursor = 'pointer'; 
+                break;
+                
+            case 'waiting':
+                container.classList.add('state-wait');
+                mainText.textContent = "WAIT for Green...";
+                subText.textContent = `Do NOT click yet! (Attempt ${reactionTimes.length + 1}/${MAX_TRIES})`;
+                attemptTracker.classList.remove('hidden');
+                container.style.cursor = 'pointer';
+                break;
+
+            case 'go':
+                container.classList.add('state-ready');
+                mainText.textContent = "NOW!";
+                subText.textContent = `Tap! Tap! Tap!`;
+                container.style.cursor = 'pointer';
+                break;
+                
+            case 'early':
+                container.classList.add('state-early');
+                mainText.textContent = "TOO EARLY!";
+                subText.textContent = `Wait for the color to change. Click to try again.`;
+                clearTimeout(timerId);
+                container.style.cursor = 'pointer'; 
+                break;
+                
+            case 'result':
+                const avg = calculateAverage();
+                let resultMessage;
+                
+                if (avg <= TARGET_AVG) {
+                    resultMessage = `🎉 SUCCESS! Avg: ${avg}ms`;
+                    mainText.style.color = '#10b981'; // Green
+                } else {
+                    resultMessage = `❌ FAILED! Avg: ${avg}ms`;
+                    mainText.style.color = '#ef4444'; // Red
+                }
+                
+                container.classList.add('state-result');
+                mainText.textContent = resultMessage;
+                mainText.classList.add('animate-fade-in');
+
+                subText.textContent = `Goal: <${TARGET_AVG}ms. ${MAX_TRIES} attempts complete.`;
+                startRoundButton.classList.remove('hidden');
+                
+                // Reset color for next round
+                setTimeout(() => mainText.style.color = 'white', 500);
+                break;
+        }
+        
+        updateTimesList();
+    }
+    
+    function updateTimesList() {
+        timesList.innerHTML = '';
+        reactionTimes.forEach((time, index) => {
+            const li = document.createElement('li');
+            li.className = 'flex justify-between items-center';
+            
+            let timeColor;
+            if (time <= TARGET_AVG) {
+                timeColor = 'text-green-400';
+            } else if (time <= TARGET_AVG + 100) { 
+                timeColor = 'text-yellow-400';
+            } else {
+                timeColor = 'text-red-400';
+            }
+
+            li.innerHTML = `<span>Try ${index + 1}:</span> <span class="font-mono font-black ${timeColor}">${time} ms</span>`;
+            timesList.appendChild(li);
+        });
+        currentAvgDisplay.textContent = calculateAverage() + ' ms';
+        totalWinsDisplay.textContent = totalWins;
+    }
+
+    // --- GAME LOGIC ---
+
+    function startWaiting() {
+        // Clear any previous timer
+        clearTimeout(timerId); 
+        gameState = 'waiting';
+        updateUI();
+        
+        // Random wait time
+        const waitTime = Math.random() * (MAX_WAIT - MIN_WAIT) + MIN_WAIT;
+        
+        timerId = setTimeout(() => {
+            if (gameState === 'waiting') {
+                gameState = 'go';
+                startTime = performance.now();
+                updateUI();
+            }
+        }, waitTime);
+    }
+    
+    // Handles all screen clicks
+    function handleScreenClick(event) {
+        // Check if the click originated from a button, if so, ignore the game logic
+        if (event.target.closest('button')) {
+            return;
+        }
+
+        switch (gameState) {
+            case 'ready':
+                // Start a new round
+                reactionTimes = [];
+                startWaiting();
+                break;
+                
+            case 'waiting':
+                // Too early click
+                gameState = 'early';
+                updateUI();
+                break;
+
+            case 'go':
+                // Successful click
+                const endTime = performance.now();
+                const reactionTime = Math.round(endTime - startTime);
+                reactionTimes.push(reactionTime);
+                
+                if (reactionTimes.length < MAX_TRIES) {
+                    // Start next try immediately
+                    startWaiting(); 
+                } else {
+                    // Round complete
+                    processRoundResult();
+                }
+                break;
+
+            case 'early':
+                // Restart waiting after too early click
+                startWaiting();
+                break;
+        }
+    }
+    
+    function processRoundResult() {
+        const avg = calculateAverage();
+        gameState = 'result';
+
+        // Update total win score
+        if (avg <= TARGET_AVG) {
+            totalWins++;
+        }
+        
+        updateUI();
+    }
+
+    // Function called by the 'Start Next Round' button
+    function startNewRoundFromButton(event) {
+        event.stopPropagation(); // CRITICAL FIX: Stops the click from bubbling up to the container and being registered as 'too early'
+        if (gameState === 'result') {
+            reactionTimes = [];
+            startWaiting(); 
+        }
+    }
+
+    function resetTotalWins(event) {
+        event.stopPropagation(); // CRITICAL FIX
+        totalWins = 0;
+        reactionTimes = [];
+        gameState = 'ready';
+        updateUI();
+    }
+
+    // --- INITIALIZATION ---
+
+    // Attach all event listeners
+    container.addEventListener('click', handleScreenClick);
+    startRoundButton.addEventListener('click', startNewRoundFromButton);
+    resetChampionshipButton.addEventListener('click', resetTotalWins);
+
+    // Initial setup on load
+    document.addEventListener('DOMContentLoaded', () => {
+        updateUI(); // Set initial state and display 'Click to Start'
+    });
+
+</script>
+
+</body>
+</html>

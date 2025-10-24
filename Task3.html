@@ -79,7 +79,7 @@
     <div class="absolute top-4 w-full flex justify-center p-4 text-white z-30">
         <h1 class="text-2xl font-black text-indigo-400 text-center">Level 3: Color Challenge</h1>
         <div class="absolute right-4 text-right">
-            <p class="text-xs text-gray-500 font-bold uppercase tracking-wider">Streak Goal: <span class="font-mono text-base">15</span></p>
+            <p class="text-xs text-gray-500 font-bold uppercase tracking-wider">Streak Goal: <span class="font-mono text-base">10</span></p>
         </div>
     </div>
 
@@ -87,12 +87,12 @@
         </div>
 
     <div id="streak-display" class="mt-8 text-2xl font-bold bg-gray-700/80 py-2 px-4 rounded-xl shadow-lg hidden text-white">
-        Current Streak: <span id="current-streak" class="text-green-400">0</span> / 15
+        Current Streak: <span id="current-streak" class="text-green-400">0</span> / 10
     </div>
 
     <div id="ui-overlay" class="ui-center text-white">
         <h2 id="main-message" class="text-4xl font-extrabold mb-4">Spot the Difference</h2>
-        <p id="sub-message" class="text-lg text-gray-300 mb-6">Find the tile with the slightly different color. Get 15 in a row to win!</p>
+        <p id="sub-message" class="text-lg text-gray-300 mb-6">Find the tile with the slightly different color. Get 10 in a row to win!</p>
         
         <div class="space-y-4">
             <button id="start-btn" class="start-btn bg-indigo-600 text-white text-lg hover:bg-indigo-700">
@@ -108,7 +108,8 @@
     // --- GAME CONSTANTS ---
     const GRID_SIZE = 4;
     const TOTAL_TILES = GRID_SIZE * GRID_SIZE;
-    const WIN_STREAK_GOAL = 15; // New goal is 15 in a row
+    // MODIFIED: WIN_STREAK_GOAL changed from 15 to 10
+    const WIN_STREAK_GOAL = 10; // New goal is 10 in a row
     const INITIAL_DIFFERENCE = 40; // High difference for easy start
     const DIFFERENCE_DECREMENT = 4; // How much harder it gets each correct guess
     const MIN_DIFFERENCE = 5; // Absolute minimum difference for difficulty cap
@@ -184,6 +185,8 @@
     function updateScoreDisplay() {
         // Removed totalWinsDisplay update
         currentStreakDisplay.textContent = currentStreak;
+        // Also update the display text to show the correct goal (10)
+        document.getElementById('streak-display').lastChild.textContent = ` / ${WIN_STREAK_GOAL}`;
     }
 
     // Refactored updateUI to take an explicit state for clarity and robustness
@@ -271,7 +274,8 @@
                 // Round Win!
                 // Removed totalWins update and localStorage logic
                 isGameRunning = false;
-                updateUI("CHALLENGE COMPLETE! 🎉", "You got 15 in a row! Start a new round.", 'win');
+                // MODIFIED: Updated win message to reflect the new goal (10)
+                updateUI("CHALLENGE COMPLETE! 🎉", "You got 10 in a row! Start a new round.", 'win');
                 
             } else {
                 // Correct, continue to next level with increased difficulty
@@ -303,7 +307,8 @@
         // Removed loadGameData call
         startButton.addEventListener('click', startGame);
         restartButton.addEventListener('click', startGame); // Listen for the restart button
-        updateUI("Spot the Difference", "Find the tile with the slightly different color. Get 15 in a row to win!"); // Initial state (defaults to 'initial')
+        // MODIFIED: Updated initial sub-message to reflect the new goal (10)
+        updateUI("Spot the Difference", "Find the tile with the slightly different color. Get 10 in a row to win!"); // Initial state (defaults to 'initial')
     }
 
     document.addEventListener('DOMContentLoaded', init);

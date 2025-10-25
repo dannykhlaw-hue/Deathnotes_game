@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Number Memory Challenge</title>
-    <!-- Load Tailwind CSS for utility classes -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* Custom styles for the game board */
@@ -51,11 +50,6 @@
             color: #c9d1d9;
         }
 
-        .tile:active {
-            transform: scale(0.95);
-        }
-        
-        /* State when numbers are shown for memorization */
         .tile.active-number {
             background-color: #30475e; /* Darker blue background */
         }
@@ -108,7 +102,6 @@
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
     </style>
-    <!-- Firebase Imports -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -176,20 +169,17 @@
             <span id="level-display" class="px-4 py-2 bg-purple-600 rounded-full text-white font-semibold shadow-lg">Level: 0</span>
             <span id="target-display" class="px-4 py-2 bg-yellow-600 rounded-full text-white font-semibold shadow-lg">Next: 1</span>
             <span id="highest-score-display" class="px-4 py-2 bg-gray-700 rounded-full text-white font-semibold shadow-lg">Highest Level: 0</span>
-            <!-- New Recall Timer Display -->
             <span id="recall-timer" class="px-4 py-2 bg-red-600 rounded-full text-white font-semibold shadow-lg hidden">Time: 10.0s</span>
         </div>
     </div>
 
     <div id="game-container" class="game-grid mb-6">
-        <!-- Tiles will be dynamically generated here -->
-    </div>
+        </div>
 
     <button id="start-button" onclick="startGame()" class="button bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full text-lg">
         Start Game
     </button>
     
-    <!-- Game Over/Message Modal (Only used for Game Over and Final Win) -->
     <div id="game-modal" class="hidden fixed inset-0 bg-black bg-opacity-80 flex justify-center items-center z-50 p-4" onclick="hideModal()">
         <div class="bg-gray-800 p-8 rounded-xl shadow-2xl text-center max-w-sm w-full" onclick="event.stopPropagation()">
             <h2 id="modal-title" class="text-3xl font-bold mb-4 text-white"></h2>
@@ -206,8 +196,8 @@
         const MAX_NUMBER = 25;
         const RECALL_TIME_LIMIT_SECONDS = 10; 
         
-        // Progression
-        const WIN_GOAL_LEVEL = 10; 
+        // MODIFIED: Progression goal changed from 10 to 8
+        const WIN_GOAL_LEVEL = 8; 
         
         // Fixed Speed Settings (Time Decrement is 0, so speed is constant)
         const INITIAL_FADE_DURATION_MS = 800; 
@@ -567,7 +557,7 @@
         /**
          * Handles the user clicking a tile during the recall phase.
          */
-        const handleTileClick = (event) => {
+        window.handleTileClick = (event) => {
             if (!state.isRecallPhase) return;
 
             const clickedTile = event.currentTarget;
@@ -597,6 +587,7 @@
                     if (state.level >= WIN_GOAL_LEVEL) {
                         // VICTORY ACHIEVED (GOAL MET)
                         statusMessage.textContent = `CHALLENGE COMPLETE! You beat the game!`;
+                        // MODIFIED: Updated the win message to reflect the 8-number goal
                         showModal(
                             'CHALLENGE COMPLETE!', 
                             `You successfully completed the ${WIN_GOAL_LEVEL}-number challenge!`,
@@ -650,6 +641,12 @@
                 );
             }
         };
+        
+        // Expose startGame to the global scope for the button's onclick attribute
+        window.startGame = startGame;
+        // Expose hideModal to the global scope for the modal's onclick attribute
+        window.hideModal = hideModal;
+
 
         // --- Initialization ---
 

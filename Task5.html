@@ -41,7 +41,7 @@
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
             transition: background-color 0.2s ease-out, transform 0.1s ease;
             position: relative;
-            cursor: pointer;
+            cursor: default; /* Changed from pointer */
             text-align: center;
         }
         
@@ -59,8 +59,8 @@
             text-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
         }
 
-        /* Button */
-        #go-btn {
+        /* Button - (Retained class structure for consistency but button removed) */
+        .button-placeholder {
             font-size: 1.5rem;
             font-weight: 700;
             padding: 1rem 2rem;
@@ -69,11 +69,6 @@
             transition: transform 0.1s;
         }
 
-        #go-btn:active {
-            transform: scale(0.98);
-            box-shadow: none;
-        }
-        
         /* Scoreboard Styling */
         .scoreboard-item {
             text-align: center;
@@ -104,36 +99,34 @@
     </div>
 
     <div id="stimulus-box" class="bg-gray-700">
-        <p id="stimulus-text">Press Start</p>
+        <p id="stimulus-text">Press Spacebar to Start</p>
         <p id="feedback-message"></p>
     </div>
 
     <div class="mt-8 w-full max-w-2xl flex flex-col items-center space-y-4">
-        <button id="go-btn" class="bg-indigo-600 text-white hover:bg-indigo-700 w-full max-w-sm">
-            Start Elite Test
-        </button>
-        <p id="instructions" class="text-sm text-gray-400">
-            GO (Green) = Click RESPOND. | STOP (Red) = Do Nothing.
-            <br>A False Alarm (tapping STOP) will end the test immediately. 
+        <p id="instructions" class="text-sm text-gray-400 text-center">
+            GO (Green) = Press **SPACEBAR** to Respond. | STOP (Red) = Do Nothing.
+            <br>A False Alarm (pressing SPACEBAR on STOP) will end the test immediately. 
         </p>
     </div>
 
 <script>
     // --- GAME CONSTANTS ---
-    const NOGO_BASE_RATIO = 0.35; // Base chance of No-Go
-    const NOGO_DAMPENING_RATIO = 0.20; // Ratio used if last trial was No-Go (80% GO chance)
-    const NOGO_STREAK_BREAK_RATIO = 0.45; // Ratio used if last trial was Go (45% STOP chance) - Higher chance to break GO streaks
+    // Ratios are set for approx. 60% Go (Green) and 40% No-Go (Red)
+    const NOGO_BASE_RATIO = 0.40; // Overall target chance of No-Go
+    const NOGO_DAMPENING_RATIO = 0.30; // Chance of No-Go if last trial was No-Go (Heavy bias towards Go)
+    const NOGO_STREAK_BREAK_RATIO = 0.50; // Chance of No-Go if last trial was Go (Slight bias towards No-Go)
     const MIN_INTERVAL = 1000; // Minimum time between stimulus changes
     const MAX_INTERVAL = 2000; // Maximum time between stimulus changes
     
     // --- ELITE GOALS ---
-    const HIT_GOAL = 15; // UPDATED from 20 to 15
-    const RT_GOAL = 400; // ms (Remains 400ms)
+    const HIT_GOAL = 15; 
+    const RT_GOAL = 400; // ms 
 
     // --- DOM ELEMENTS ---
     const stimulusBox = document.getElementById('stimulus-box');
     const stimulusText = document.getElementById('stimulus-text');
-    const goButton = document.getElementById('go-btn');
+    // Removed: const goButton = document.getElementById('go-btn');
     const hitsCountDisplay = document.getElementById('hits-count');
     const falseAlarmsCountDisplay = document.getElementById('false-alarms-count');
     const avgRTDisplay = document.getElementById('avg-rt-display');
@@ -199,6 +192,9 @@
     // --- GAME LOGIC ---
     
     function startGame() {
+        // Check if a game is already running (shouldn't happen with the spacebar check, but safety)
+        if (isGameRunning) return; 
+        
         // Reset state
         trialNumber = 0;
         hits = 0;
@@ -214,7 +210,7 @@
         stimulusBox.classList.remove('shadow-green-500/50', 'shadow-red-500/50', 'shadow-yellow-500/50');
         
         // Initial UI setup
-        goButton.textContent = 'TAP TO RESPOND';
+        // Removed: goButton.textContent = 'TAP TO RESPOND';
         stimulusBox.style.backgroundColor = '#4b5563'; // Gray/Ready
         stimulusText.textContent = 'Get Ready...';
         updateScoreboard();
@@ -224,7 +220,6 @@
     }
 
     function scheduleNextTrial() {
-        // The game now only ends on HIT_GOAL being met or a False Alarm.
         if (!isGameRunning) {
             return;
         }
@@ -245,14 +240,14 @@
         trialNumber++;
         isStimulusActive = true;
         
-        // --- Stimulus Mixing Logic (Reworked for better alternation) ---
+        // --- Stimulus Mixing Logic ---
         let currentNoGoRatio;
 
         if (lastTrialWasNoGo) {
-            // If last was STOP, force a high chance of GO (80%) to alternate
+            // If last was STOP (No-Go), use a lower ratio (0.30) to increase the chance of GO (70% GO)
             currentNoGoRatio = NOGO_DAMPENING_RATIO; 
         } else {
-            // If last was GO, boost the chance of STOP (45%) to break GO streaks
+            // If last was GO, use a higher ratio (0.50) to increase the chance of STOP (50% STOP)
             currentNoGoRatio = NOGO_STREAK_BREAK_RATIO;
         }
 
@@ -299,7 +294,6 @@
     }
 
     function handleResponse() {
-        // This check is required for the Spacebar listener
         if (!isGameRunning) return; 
 
         if (!isStimulusActive) {
@@ -335,10 +329,10 @@
     }
     
     function endGame(isWinPlaceholder, isFalseAlarmEnd = false) { 
-        if (!isGameRunning && !isFalseAlarmEnd) return; // Prevent double ending
+        if (!isGameRunning && !isFalseAlarmEnd) return; 
 
         isGameRunning = false;
-        clearTimeout(timeoutId); // Stop any pending stimulus timeouts
+        clearTimeout(timeoutId); 
 
         // Calculate final results
         const totalNoGoTrials = falseAlarms + correctRejections;
@@ -349,7 +343,7 @@
 
         let finalTitle = '';
         let finalMessage = '';
-        let finalColor = '#ef4444'; // Default to red (Failure)
+        let finalColor = '#ef4444'; 
 
         // Reset Box Shadow
         stimulusBox.classList.remove('shadow-green-500/50', 'shadow-red-500/50', 'shadow-yellow-500/50');
@@ -366,13 +360,13 @@
                 // CASE 2: Successful Win - ELITE INHIBITOR
                 finalTitle = `ELITE INHIBITOR ACHIEVED! 🏆`;
                 finalMessage = `PERFECT! RT: ${avgRT}ms`;
-                finalColor = '#10b981'; // Green (Success)
+                finalColor = '#10b981'; 
                 stimulusBox.classList.add('shadow-green-500/50');
             } else {
-                // CASE 3: Failed Speed Check (Met hit goal, but speed failed)
+                // CASE 3: Failed Speed Check
                 finalTitle = `SPEED FAILURE 🐌`;
                 finalMessage = `Too Slow! Avg RT: ${avgRT}ms (Goal: ${RT_GOAL}ms )`; 
-                finalColor = '#f59e0b'; // Amber/Orange (Speed Failure)
+                finalColor = '#f59e0b'; 
                 stimulusBox.classList.add('shadow-yellow-500/50');
             }
         } else {
@@ -388,44 +382,31 @@
             ${finalTitle}<br>
             <span class="text-xl font-normal block text-white mt-4">${finalMessage}</span>
             <span class="text-sm font-light block text-gray-200/80 mt-2">Inhibition Rate: ${noGoInhibition.toFixed(1)}%</span>
-            <span class="text-xs font-light block text-gray-200/50 mt-4">Tap to Restart</span>
+            <span class="text-xs font-light block text-gray-200/50 mt-4">Press Spacebar to Restart</span>
         `;
-        
-        // Update button for restart
-        goButton.textContent = 'Start New Elite Test';
     }
 
     // --- EVENT LISTENERS ---
     
-    // Spacebar listener (retained for desktop users)
+    // Spacebar is now the *only* input method for both Start and Response.
     document.addEventListener('keydown', (e) => {
-        if (e.code === 'Space' && isGameRunning) {
+        if (e.code === 'Space') {
             e.preventDefault(); // Prevent scrolling
-            handleResponse();
+            if (!isGameRunning) {
+                startGame();
+            } else {
+                handleResponse();
+            }
         }
     });
+    
+    // Removed all click/tap listeners
 
-    // Unified click handler for the 'TAP TO RESPOND' button (Handles Start/Response)
-    goButton.addEventListener('click', () => {
-        if (!isGameRunning) {
-            startGame();
-        } else {
-            handleResponse();
-        }
-    });
-    
-    // Stimulus box click listener for mobile touch (Handles Start/Response)
-    stimulusBox.addEventListener('click', () => {
-        if (!isGameRunning) {
-            startGame();
-        } else {
-            handleResponse();
-        }
-    });
-    
     // Initial setup on load
     document.addEventListener('DOMContentLoaded', () => {
         updateScoreboard(); 
     });
 
 </script>
+</body>
+</html>

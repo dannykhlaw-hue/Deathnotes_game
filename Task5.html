@@ -120,9 +120,10 @@
 
 <script>
     // --- GAME CONSTANTS ---
-    const NOGO_BASE_RATIO = 0.35; // Base chance of No-Go
-    const NOGO_DAMPENING_RATIO = 0.20; // Ratio used if last trial was No-Go (80% GO chance)
-    const NOGO_STREAK_BREAK_RATIO = 0.45; // Ratio used if last trial was Go (45% STOP chance) - Higher chance to break GO streaks
+    // MODIFIED: Ratios updated to achieve 40% No-Go (Red) and 60% Go (Green) average.
+    const NOGO_BASE_RATIO = 0.40; // Overall target chance of No-Go
+    const NOGO_DAMPENING_RATIO = 0.30; // Chance of No-Go if last trial was No-Go (Heavy bias towards Go)
+    const NOGO_STREAK_BREAK_RATIO = 0.50; // Chance of No-Go if last trial was Go (Slight bias towards No-Go)
     const MIN_INTERVAL = 1000; // Minimum time between stimulus changes
     const MAX_INTERVAL = 2000; // Maximum time between stimulus changes
     
@@ -249,10 +250,10 @@
         let currentNoGoRatio;
 
         if (lastTrialWasNoGo) {
-            // If last was STOP, force a high chance of GO (80%) to alternate
+            // If last was STOP (No-Go), use a lower ratio (0.30) to increase the chance of GO (70% GO)
             currentNoGoRatio = NOGO_DAMPENING_RATIO; 
         } else {
-            // If last was GO, boost the chance of STOP (45%) to break GO streaks
+            // If last was GO, use a higher ratio (0.50) to increase the chance of STOP (50% STOP)
             currentNoGoRatio = NOGO_STREAK_BREAK_RATIO;
         }
 
@@ -429,3 +430,5 @@
     });
 
 </script>
+</body>
+</html>
